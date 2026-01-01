@@ -32,4 +32,6 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     type: str = "CHAT"
     text: str
+    command: Optional[str] = None
+    parameter: Optional[str] = None
 

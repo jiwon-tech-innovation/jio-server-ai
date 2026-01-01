@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class SpeechServiceStub(object):
+class AudioServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -34,44 +34,44 @@ class SpeechServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SendAudioStream = channel.stream_unary(
-                '/SpeechService/SendAudioStream',
+        self.TranscribeAudio = channel.stream_unary(
+                '/jiaa.audio.AudioService/TranscribeAudio',
                 request_serializer=app_dot_protos_dot_audio__pb2.AudioRequest.SerializeToString,
                 response_deserializer=app_dot_protos_dot_audio__pb2.AudioResponse.FromString,
                 _registered_method=True)
 
 
-class SpeechServiceServicer(object):
+class AudioServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def SendAudioStream(self, request_iterator, context):
-        """스트림으로 데이터를 쏘겠다 선언
+    def TranscribeAudio(self, request_iterator, context):
+        """성현(Dev 1) -> 윤성(Dev 5): 음성 조각 계속 보냄 -> 문장 끝나면 텍스트 1개 리턴
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_SpeechServiceServicer_to_server(servicer, server):
+def add_AudioServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SendAudioStream': grpc.stream_unary_rpc_method_handler(
-                    servicer.SendAudioStream,
+            'TranscribeAudio': grpc.stream_unary_rpc_method_handler(
+                    servicer.TranscribeAudio,
                     request_deserializer=app_dot_protos_dot_audio__pb2.AudioRequest.FromString,
                     response_serializer=app_dot_protos_dot_audio__pb2.AudioResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'SpeechService', rpc_method_handlers)
+            'jiaa.audio.AudioService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('SpeechService', rpc_method_handlers)
+    server.add_registered_method_handlers('jiaa.audio.AudioService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class SpeechService(object):
+class AudioService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def SendAudioStream(request_iterator,
+    def TranscribeAudio(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -84,7 +84,7 @@ class SpeechService(object):
         return grpc.experimental.stream_unary(
             request_iterator,
             target,
-            '/SpeechService/SendAudioStream',
+            '/jiaa.audio.AudioService/TranscribeAudio',
             app_dot_protos_dot_audio__pb2.AudioRequest.SerializeToString,
             app_dot_protos_dot_audio__pb2.AudioResponse.FromString,
             options,

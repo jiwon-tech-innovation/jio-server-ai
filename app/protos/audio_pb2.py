@@ -24,17 +24,18 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/protos/audio.proto\"4\n\x0c\x41udioRequest\x12\x12\n\naudio_data\x18\x01 \x01(\x0c\x12\x10\n\x08is_final\x18\x02 \x01(\x08\"\x1d\n\rAudioResponse\x12\x0c\n\x04text\x18\x01 \x01(\t2C\n\rSpeechService\x12\x32\n\x0fSendAudioStream\x12\r.AudioRequest\x1a\x0e.AudioResponse(\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x61pp/protos/audio.proto\x12\njiaa.audio\"G\n\x0c\x41udioRequest\x12\x12\n\naudio_data\x18\x01 \x01(\x0c\x12\x10\n\x08is_final\x18\x02 \x01(\x08\x12\x11\n\ttimestamp\x18\x03 \x01(\x03\"I\n\rAudioResponse\x12\x12\n\ntranscript\x18\x01 \x01(\t\x12\x14\n\x0cis_emergency\x18\x02 \x01(\x08\x12\x0e\n\x06intent\x18\x03 \x01(\t2X\n\x0c\x41udioService\x12H\n\x0fTranscribeAudio\x12\x18.jiaa.audio.AudioRequest\x1a\x19.jiaa.audio.AudioResponse(\x01\x42\x19\n\x15\x63om.jiaa.common.audioP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'app.protos.audio_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  DESCRIPTOR._loaded_options = None
-  _globals['_AUDIOREQUEST']._serialized_start=26
-  _globals['_AUDIOREQUEST']._serialized_end=78
-  _globals['_AUDIORESPONSE']._serialized_start=80
-  _globals['_AUDIORESPONSE']._serialized_end=109
-  _globals['_SPEECHSERVICE']._serialized_start=111
-  _globals['_SPEECHSERVICE']._serialized_end=178
+  _globals['DESCRIPTOR']._loaded_options = None
+  _globals['DESCRIPTOR']._serialized_options = b'\n\025com.jiaa.common.audioP\001'
+  _globals['_AUDIOREQUEST']._serialized_start=38
+  _globals['_AUDIOREQUEST']._serialized_end=109
+  _globals['_AUDIORESPONSE']._serialized_start=111
+  _globals['_AUDIORESPONSE']._serialized_end=184
+  _globals['_AUDIOSERVICE']._serialized_start=186
+  _globals['_AUDIOSERVICE']._serialized_end=274
 # @@protoc_insertion_point(module_scope)

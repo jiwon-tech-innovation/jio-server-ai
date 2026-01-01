@@ -1,16 +1,23 @@
 syntax = "proto3";
 
-service SpeechService {
-  // 스트림으로 데이터를 쏘겠다 선언
-  rpc SendAudioStream (stream AudioRequest) returns (AudioResponse);
+package jiaa.audio;
+
+option java_multiple_files = true;
+option java_package = "com.jiaa.common.audio";
+
+service AudioService {
+  // 성현(Dev 1) -> 윤성(Dev 5): 음성 조각 계속 보냄 -> 문장 끝나면 텍스트 1개 리턴
+  rpc TranscribeAudio(stream AudioRequest) returns (AudioResponse);
 }
 
-// 📦 데이터 박스 모양 정의
 message AudioRequest {
-  bytes audio_data = 1;  // 실제 오디오 (이진수)
-  bool is_final = 2;     // "말 끝났어?" (True/False)
+  bytes audio_data = 1;       // VAD로 걸러진 음성 바이너리 (0.5초 단위)
+  bool is_final = 2;          // True = "방금 문장 끝났음(침묵 1초 감지)"
+  int64 timestamp = 3;        // 로깅용 시간
 }
 
 message AudioResponse {
-  string text = 1;       // AI 답변 (STT + Chat 결과)
+  string transcript = 1;      // 변환된 텍스트 ("살려줘", "유튜브 꺼줘")
+  bool is_emergency = 2;      // 위급 상황 여부 (비명 등)
+  string intent = 3;          // (옵션) 의도 분석 결과 ("COMMAND", "CHAT")
 }
