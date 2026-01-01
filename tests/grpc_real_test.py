@@ -13,7 +13,7 @@ async def test_real_audio_stream():
     """
     Generates TTS audio and streams it to the gRPC server.
     """
-    text_to_say = "오늘 하루 어땠니? 난 정말 힘들었어"
+    text_to_say = "노래 듣고 싶어 Spotify 켜줘"
     filename = "test_input.mp3"
     
     print(f"Generating TTS Audio: '{text_to_say}'...")
@@ -46,7 +46,13 @@ async def test_real_audio_stream():
             print("Waiting for Server Response (Transcribe + AI)...")
             response = await stub.SendAudioStream(request_generator())
             print("-" * 30)
-            print(f"AI Response: {response.text}")
+            print(f"AI Response Text: {response.text}")
+            if response.command:
+                print(f"Command: {response.command}")
+                print(f"Parameter: {response.parameter}")
+                print(">> CLIENT ACTION: Executing Command locally...")
+            else:
+                print("Command: None (Just Chat)")
             print("-" * 30)
         except grpc.RpcError as e:
             print(f"gRPC Error: {e.code()} - {e.details()}")
