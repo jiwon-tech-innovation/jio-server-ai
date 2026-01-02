@@ -24,30 +24,42 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
         """
         audio_buffer = bytearray()
         
+        # Context Accumulator
+        final_media_info = {}
+
         try:
             async for request in request_iterator:
                 audio_buffer.extend(request.audio_data)
+                
+                # [DEBUG] Check for media_info_json
+                if request.media_info_json:
+                    try:
+                        info = json.loads(request.media_info_json)
+                        final_media_info.update(info)
+                        print(f"✅ [Server] Updated Media Info: {info.keys()}")
+                    except:
+                        pass
+
                 if request.is_final:
                     break
         except Exception as e:
             print(f"gRPC Stream Error: {e}")
 
+        print(f"🎤 [Server] Audio Received: {len(audio_buffer)} bytes. Context: {final_media_info}")
+
         # 1. STT
         stt_response = await stt.transcribe_bytes(bytes(audio_buffer), file_ext="mp3")
         user_text = stt_response.text
 
-        # 2. Classify (Judgment: STUDY vs PLAY)
-        classify_request = ClassifyRequest(content_type="BEHAVIOR", content=user_text)
-        classify_response = await classifier.classify_content(classify_request)
-
-        # 3. Chat (Tsundere Response)
+        # 2. Chat (Tsundere Response)
         chat_request = ChatRequest(text=user_text)
+        # TODO: Pass context to Chat if supported
         chat_response = await chat.chat_with_persona(chat_request)
 
-        # 4. Construct JSON Intent
+        # 3. Construct JSON Intent
         intent_data = {
             "text": chat_response.text,
-            "state": classify_response.result,
+            "state": chat_response.state, # Use chat state (CHAT/SYSTEM) instead of screen state
             "type": chat_response.type,
             "command": chat_response.command,
             "parameter": chat_response.parameter
