@@ -28,3 +28,8 @@ test_audio.mp3
 
 # Vector DB
 chroma_db/
+
+# DevOps & Infrastructure
+jiaa-infra-ops/
+k8s/
+Jenkinsfile
