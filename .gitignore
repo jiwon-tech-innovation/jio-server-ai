@@ -25,3 +25,6 @@ test_audio.mp3
 # IDE
 .vscode/
 .idea/
+
+# Vector DB
+chroma_db/

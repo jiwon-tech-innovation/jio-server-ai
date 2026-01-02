@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     AWS_S3_REGION: str = os.getenv("AWS_S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
 
+    # Long-Term Memory (PostgreSQL)
+    PG_HOST: str = os.getenv("PG_HOST", "localhost")
+    PG_PORT: str = os.getenv("PG_PORT", "5432")
+    PG_USER: str = os.getenv("PG_USER", "postgres")
+    PG_PASSWORD: str = os.getenv("PG_PASSWORD", "password")
+    PG_DB: str = os.getenv("PG_DB", "jiaa_memory")
+
     class Config:
         case_sensitive = True
 
