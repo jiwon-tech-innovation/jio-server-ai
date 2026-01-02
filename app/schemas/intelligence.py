@@ -54,9 +54,9 @@ class ChatRequest(BaseModel):
     text: str
 
 class ChatResponse(BaseModel):
-    type: str = "CHAT"
-    state: str # CHAT (includes Study Qs), SYSTEM
-    text: str
-    command: Optional[str] = None
-    parameter: Optional[str] = None
+    intent: str # COMMAND, CHAT
+    judgment: str # STUDY, PLAY, NEUTRAL
+    action_code: str # OPEN_APP, NONE, BLOCK_APP
+    action_detail: Optional[str] = "" # "VSCode"
+    message: str # "오, 드디어..."
 

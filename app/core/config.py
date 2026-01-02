@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    BEDROCK_REGION: str = os.getenv("BEDROCK_REGION", "us-west-2") # Cross-Region for Bedrock
     AWS_S3_REGION: str = os.getenv("AWS_S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
 
     # Long-Term Memory (PostgreSQL)
@@ -20,6 +21,17 @@ class Settings(BaseSettings):
     PG_USER: str = os.getenv("PG_USER", "postgres")
     PG_PASSWORD: str = os.getenv("PG_PASSWORD", "password")
     PG_DB: str = os.getenv("PG_DB", "jiaa_memory")
+
+    # Sensor Fusion (InfluxDB)
+    INFLUXDB_URL: str = os.getenv("INFLUXDB_URL", "http://localhost:8086")
+    INFLUXDB_ORG: str = os.getenv("INFLUXDB_ORG", "jiaa")
+    INFLUXDB_BUCKET: str = os.getenv("INFLUXDB_BUCKET", "sensor_data")
+    INFLUXDB_TOKEN: str = os.getenv("INFLUXDB_TOKEN", "my-token")
+
+    # Cache (Redis)
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     class Config:
         case_sensitive = True

@@ -14,7 +14,7 @@ def get_bedrock_client():
     """
     return boto3.client(
         service_name="bedrock-runtime",
-        region_name=settings.AWS_REGION,
+        region_name=settings.BEDROCK_REGION,
         aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
         aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
     )
@@ -28,5 +28,5 @@ def get_llm(model_id: str, temperature: float = 0.0):
         client=client,
         model_id=model_id,
         model_kwargs={"temperature": temperature},
-        region_name=settings.AWS_REGION
+        region_name=settings.BEDROCK_REGION
     )
