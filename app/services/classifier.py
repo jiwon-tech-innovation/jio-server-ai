@@ -78,6 +78,8 @@ Content Details:
 Output 'confidence' (0.0-1.0).
 
 {format_instructions}
+
+IMPORTANT: Output ONLY the JSON object. No explanations, no markdown, no code blocks, no additional text before or after the JSON.
         """,
         input_variables=["content_type", "content"],
         partial_variables={"format_instructions": parser.get_format_instructions()},

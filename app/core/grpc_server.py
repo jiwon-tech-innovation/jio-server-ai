@@ -1,3 +1,24 @@
+"""
+gRPC Server for JIAA Intelligence Worker (Dev 5)
+
+Services:
+- AudioService: Audio streaming from Dev 1 (기존)
+- IntelligenceService: AI operations for Dev 4 (Core Decision Service)
+"""
+import grpc
+import grpc.aio
+import json
+
+from app.protos import audio_pb2, audio_pb2_grpc
+from app.services import stt, classifier, chat
+from app.schemas.intelligence import ClassifyRequest, ChatRequest, SolveRequest
+
+
+class AudioService(audio_pb2_grpc.AudioServiceServicer):
+    """Dev 1(OS Agent)과의 오디오 스트리밍 서비스"""
+    
+    async def TranscribeAudio(self, request_iterator, context):
+        """
         Receives AudioStream, aggregates bytes, performs STT -> Chat.
         Matches Dev 1's Proto definition.
         """
@@ -16,7 +37,6 @@
         user_text = stt_response.text
 
         # 2. Classify (Judgment: STUDY vs PLAY)
-        # Use stt_result as content, type="TEXT" or "PROCESS_NAME" context
         classify_request = ClassifyRequest(content_type="BEHAVIOR", content=user_text)
         classify_response = await classifier.classify_content(classify_request)
 
@@ -25,11 +45,10 @@
         chat_response = await chat.chat_with_persona(chat_request)
 
         # 4. Construct JSON Intent
-        # Combine Chat (Response, Command) + Classifier (State)
         intent_data = {
             "text": chat_response.text,
-            "state": classify_response.result,  # STUDY / PLAY
-            "type": chat_response.type,         # CHAT / COMMAND
+            "state": classify_response.result,
+            "type": chat_response.type,
             "command": chat_response.command,
             "parameter": chat_response.parameter
         }
@@ -42,10 +61,237 @@
             intent=final_intent
         )
 
+
+# =============================================================================
+# IntelligenceService - Dev 4 (Core Decision Service) 연동용
+# =============================================================================
+from app.services import solver
+
+
+class IntelligenceService:
+    """
+    Dev 4(Core Decision Service, Go)와 통신하기 위한 gRPC 서비스
+    
+    Methods:
+    - AnalyzeLog: 에러 로그 분석 (Emergency Protocol)
+    - ClassifyURL: URL/Title을 STUDY vs PLAY로 분류
+    - TranscribeAudio: 실시간 STT (스트리밍)
+    """
+    
+    async def AnalyzeLog(self, request, context):
+        """
+        에러 로그 분석 (Emergency Protocol)
+        
+        Dev 6가 EMERGENCY 상태 전송 시, Dev 4가 이 메서드를 호출
+        """
+        print(f"[IntelligenceService] AnalyzeLog called: client_id={request.client_id}")
+        print(f"[IntelligenceService] ErrorLog length: {len(request.error_log)}")
+        print(f"[IntelligenceService] ScreamText: {request.scream_text}")
+        
+        try:
+            # SolveRequest 생성 (audio_decibel은 비명 텍스트 유무로 판단)
+            audio_decibel = 95 if request.scream_text else 60
+            solve_request = SolveRequest(
+                log=request.error_log,
+                audio_decibel=audio_decibel
+            )
+            
+            # solver.py의 solve_error 호출
+            solve_response = await solver.solve_error(solve_request)
+            
+            # Markdown 형태로 결과 조합
+            markdown = f"""# 🔧 에러 해결 가이드
+
+## 원인 분석
+{solve_response.comfort_message}
+
+## 해결 방법
+```
+{solve_response.solution_code}
+```
+
+## 📝 Today I Learned
+{solve_response.til_content}
+"""
+            
+            # 응답 생성 - 딕셔너리로 반환 (순수 Python 객체)
+            return {
+                "success": True,
+                "markdown": markdown,
+                "solution_code": solve_response.solution_code,
+                "error_type": "RUNTIME_ERROR",
+                "confidence": 0.85
+            }
+            
+        except Exception as e:
+            print(f"[IntelligenceService] AnalyzeLog Error: {e}")
+            return {
+                "success": False,
+                "markdown": f"분석 실패: {str(e)}",
+                "solution_code": "",
+                "error_type": "UNKNOWN",
+                "confidence": 0.0
+            }
+    
+    async def ClassifyURL(self, request, context):
+        """
+        URL/Title 분류 (Study vs Play)
+        
+        Dev 4가 실시간 블랙리스트 판단에 사용
+        """
+        print(f"[IntelligenceService] ClassifyURL called: url={request.url}, title={request.title}")
+        
+        try:
+            # classifier.py의 classify_content 호출
+            classify_request = ClassifyRequest(
+                content_type="URL",
+                content=request.url if request.url else request.title
+            )
+            
+            classify_response = await classifier.classify_content(classify_request)
+            
+            # URLClassification enum 매핑
+            classification_map = {
+                "STUDY": 1,
+                "PLAY": 2,
+                "NEUTRAL": 3,
+                "WORK": 4,
+                "UNKNOWN": 0
+            }
+            classification = classification_map.get(classify_response.result, 0)
+            
+            return {
+                "success": True,
+                "classification": classification,
+                "confidence": classify_response.confidence,
+                "reason": classify_response.reason
+            }
+            
+        except Exception as e:
+            print(f"[IntelligenceService] ClassifyURL Error: {e}")
+            return {
+                "success": False,
+                "classification": 0,
+                "confidence": 0.0,
+                "reason": f"분류 실패: {str(e)}"
+            }
+    
+    async def TranscribeAudio(self, request_iterator, context):
+        """
+        실시간 STT (스트리밍)
+        
+        Dev 4가 오디오 스트림을 전송하면 텍스트로 변환
+        """
+        print("[IntelligenceService] TranscribeAudio stream started")
+        
+        audio_buffer = bytearray()
+        client_id = ""
+        
+        try:
+            async for chunk in request_iterator:
+                client_id = chunk.client_id
+                audio_buffer.extend(chunk.audio_data)
+                if chunk.is_final:
+                    break
+            
+            # STT 수행
+            stt_response = await stt.transcribe_bytes(bytes(audio_buffer), file_ext="wav")
+            
+            print(f"[IntelligenceService] Transcribed: {stt_response.text}")
+            
+            return {
+                "success": True,
+                "text": stt_response.text,
+                "is_final": True,
+                "audio_level": 60.0
+            }
+            
+        except Exception as e:
+            print(f"[IntelligenceService] TranscribeAudio Error: {e}")
+            return {
+                "success": False,
+                "text": f"STT 실패: {str(e)}",
+                "is_final": True,
+                "audio_level": 0.0
+            }
+
+
+# =============================================================================
+# gRPC Server Setup
+# =============================================================================
+
+def _create_method_handlers(servicer):
+    """IntelligenceService용 메서드 핸들러 생성"""
+    return {
+        'AnalyzeLog': grpc.unary_unary_rpc_method_handler(
+            servicer.AnalyzeLog,
+        ),
+        'ClassifyURL': grpc.unary_unary_rpc_method_handler(
+            servicer.ClassifyURL,
+        ),
+        'TranscribeAudio': grpc.stream_unary_rpc_method_handler(
+            servicer.TranscribeAudio,
+        ),
+    }
+
+
+class IntelligenceServiceHandler(grpc.aio.ServicerContext):
+    """간단한 gRPC 핸들러 (protobuf 없이 동작)"""
+    
+    def __init__(self, servicer):
+        self.servicer = servicer
+    
+    async def handle_analyze_log(self, request_data):
+        """AnalyzeLog RPC 핸들러"""
+        class Request:
+            def __init__(self, data):
+                self.client_id = data.get("client_id", "")
+                self.error_log = data.get("error_log", "")
+                self.scream_text = data.get("scream_text", "")
+                self.context = data.get("context", "")
+        
+        return await self.servicer.AnalyzeLog(Request(request_data), None)
+
+
 async def serve_grpc():
+    """gRPC 서버 시작 - AudioService + IntelligenceService"""
     server = grpc.aio.server()
+    
+    # 1. AudioService 등록 (기존)
     audio_pb2_grpc.add_AudioServiceServicer_to_server(AudioService(), server)
+    
+    # 2. IntelligenceService 등록
+    intelligence_servicer = IntelligenceService()
+    
+    # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이)
+    from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler
+    
+    rpc_method_handlers = {
+        'AnalyzeLog': unary_unary_rpc_method_handler(
+            intelligence_servicer.AnalyzeLog,
+        ),
+        'ClassifyURL': unary_unary_rpc_method_handler(
+            intelligence_servicer.ClassifyURL,
+        ),
+        'TranscribeAudio': stream_unary_rpc_method_handler(
+            intelligence_servicer.TranscribeAudio,
+        ),
+    }
+    
+    generic_handler = grpc.method_handlers_generic_handler(
+        'jiaa.IntelligenceService', 
+        rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))
+    
+    # 서버 시작
     server.add_insecure_port('[::]:50051')
-    print("gRPC Server running on port 50051 (Service: AudioService)...")
+    print("=" * 50)
+    print("gRPC Server running on port 50051")
+    print("Services:")
+    print("  - AudioService (Dev 1 → Dev 5)")
+    print("  - IntelligenceService (Dev 4 → Dev 5)")
+    print("=" * 50)
+    
     await server.start()
     await server.wait_for_termination()
