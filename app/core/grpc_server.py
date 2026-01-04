@@ -210,6 +210,15 @@ class IntelligenceService:
                     break
             
             # STT 수행
+            if len(audio_buffer) == 0:
+                print("[IntelligenceService] ⚠️ Received empty audio buffer")
+                return {
+                    "success": False,
+                    "text": "(No audio data)",
+                    "is_final": True,
+                    "audio_level": 0.0
+                }
+
             stt_response = await stt.transcribe_bytes(bytes(audio_buffer), file_ext="wav")
             
             print(f"[IntelligenceService] Transcribed: {stt_response.text}")
@@ -225,7 +234,7 @@ class IntelligenceService:
             print(f"[IntelligenceService] TranscribeAudio Error: {e}")
             return {
                 "success": False,
-                "text": f"STT 실패: {str(e)}",
+                "text": f"STT Error: {str(e)}",
                 "is_final": True,
                 "audio_level": 0.0
             }
