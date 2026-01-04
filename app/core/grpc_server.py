@@ -50,19 +50,22 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
         # 1. STT
         stt_response = await stt.transcribe_bytes(bytes(audio_buffer), file_ext="mp3")
         user_text = stt_response.text
+        
+        # 🎤 로그: 사용자가 말한 내용 출력
+        print(f"🗣️ [STT] User said: \"{user_text}\"")
 
         # 2. Chat (Tsundere Response)
         chat_request = ChatRequest(text=user_text)
         # TODO: Pass context to Chat if supported
         chat_response = await chat.chat_with_persona(chat_request)
 
-        # 3. Construct JSON Intent
+        # 3. Construct JSON Intent (스키마에 맞게 매핑)
         intent_data = {
-            "text": chat_response.text,
-            "state": chat_response.state, # Use chat state (CHAT/SYSTEM) instead of screen state
-            "type": chat_response.type,
-            "command": chat_response.command,
-            "parameter": chat_response.parameter
+            "text": chat_response.message,           # message → text
+            "state": chat_response.judgment,        # judgment (STUDY/PLAY/NEUTRAL)
+            "type": chat_response.intent,           # intent (COMMAND/CHAT)
+            "command": chat_response.action_code,   # action_code (OPEN_APP, etc.)
+            "parameter": chat_response.action_detail or ""  # action_detail
         }
         
         final_intent = json.dumps(intent_data, ensure_ascii=False)
