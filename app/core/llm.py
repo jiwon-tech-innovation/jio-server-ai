@@ -5,7 +5,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 # Model IDs
-HAIKU_MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0"
+HAIKU_MODEL_ID = "anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET_MODEL_ID = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
 def get_bedrock_client():
