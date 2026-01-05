@@ -31,5 +31,4 @@ chroma_db/
 
 # DevOps & Infrastructure
 jiaa-infra-ops/
-k8s/
 Jenkinsfile
