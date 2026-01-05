@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jiaa-server-ai
+  labels:
+    app: jiaa-server-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jiaa-server-ai
+  template:
+    metadata:
+      labels:
+        app: jiaa-server-ai
+    spec:
+      serviceAccountName: jiaa-server-ai
+      containers:
+      - name: jiaa-server-ai
+        image: jiaa-server-ai:latest # Replace with your ECR/Registry URL
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 50051
+          name: grpc
+        env:
+        # General Config
+        - name: PROJECT_NAME
+          value: "JIAA Intelligence Worker"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-ai-secret
+              key: openai_api_key
+        
+        # AWS Credentials (Recommended: Use IRSA instead of keys)
+        # - name: AWS_ACCESS_KEY_ID
+        #   valueFrom: { secretKeyRef: { name: aws-secret, key: key_id } }
+        # - name: AWS_SECRET_ACCESS_KEY
+        #   valueFrom: { secretKeyRef: { name: aws-secret, key: access_key } }
+        - name: BEDROCK_REGION
+          value: "us-east-1"
+        - name: AWS_REGION
+          value: "us-east-1"
+        
+        # Database (Connects to 'jiaa-postgres' Service)
+        - name: PG_HOST
+          value: "jiaa-postgres"
+        - name: PG_PORT
+          value: "5432"
+        - name: PG_USER
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-db-secret
+              key: pg_user
+        - name: PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-db-secret
+              key: pg_password
+        - name: PG_DB
+          value: "jiaa_memory"
+        
+        # Redis (Connects to 'jiaa-redis' Service)
+        - name: REDIS_HOST
+          value: "jiaa-redis"
+        - name: REDIS_PORT
+          value: "6379"
+        
+        # InfluxDB (Connects to 'jiaa-influxdb' Service)
+        - name: INFLUXDB_URL
+          value: "http://jiaa-influxdb:8086"
+        - name: INFLUXDB_ORG
+          value: "jiaa"
+        - name: INFLUXDB_BUCKET
+          value: "sensor_data"
+        - name: INFLUXDB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-influx-secret
+              key: token
+        
+        # Probes
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
