@@ -69,6 +69,46 @@ class MemoryService:
         context += "======================\n"
         return context
 
+    def get_daily_activities(self, date_str: str = None) -> list[str]:
+        """
+        Retrieves all activity logs for a specific date (default: today).
+        Returns a list of strings suitable for the blog post.
+        """
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            
+        print(f"DEBUG: Fetching activities for {date_str}...")
+        
+        # In a real vector store, we should use metadata filter: {"timestamp": ...}
+        # But since timestamp is ISO format, partial match might be tricky in Chroma simple filter.
+        # We will fetch 'k=100' most recent and filter in Python.
+        
+        activities = []
+        try:
+            # Broad search to get recent logs
+            today_docs = self.stm.similarity_search("User study and play log", k=50)
+            
+            for doc in today_docs:
+                # Timestamp format: 2026-01-04T...
+                ts = doc.metadata.get("timestamp", "")
+                if ts.startswith(date_str):
+                    # Format: "[14:30] Content (Category)"
+                    time_part = ts[11:16] # HH:MM
+                    category = doc.metadata.get("category", "General")
+                    activities.append(f"[{time_part}] {doc.page_content} ({category})")
+                    
+            # Sort by time just in case
+            activities.sort()
+            
+        except Exception as e:
+            print(f"STM Fetch Error: {e}")
+            return ["(기록을 불러오는 중 에러가 발생했습니다.)"]
+            
+        if not activities:
+            return ["(오늘의 특별한 활동 기록이 없습니다. 숨쉬기 운동 정도?)"]
+            
+        return activities
+
     async def consolidate_memory(self):
         """
         [Sleep Routine]

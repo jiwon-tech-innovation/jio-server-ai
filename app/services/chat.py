@@ -4,6 +4,9 @@ from app.core.llm import get_llm, HAIKU_MODEL_ID
 from app.schemas.intelligence import ChatRequest, ChatResponse
 from app.services.memory_service import memory_service # Move import to top
 
+
+from app.services.statistic_service import statistic_service
+
 async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     """
     Intelligent Chatbot with Tsundere Persona.
@@ -12,17 +15,46 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.7) 
     parser = PydanticOutputParser(pydantic_object=ChatResponse)
 
-    # [MEMORY INTEG] Retrieve Context
+    # 1. [MEMORY INTEG] Retrieve Semantic Context (Vector Search)
     try:
         memory_context = memory_service.get_user_context(request.text)
     except Exception as e:
         print(f"DEBUG: Memory Context Unavailable: {e}")
         memory_context = ""
 
+    # 2. [HYBRID INTEG] Retrieve Behavioral Stats (InfluxDB)
+    behavior_report = ""
+    try:
+        # InfluxDB service does not need 'db' session
+        stats = await statistic_service.get_recent_summary(user_id="dev1", days=3)
+        
+        # Judgment Logic for Prompt
+        if stats["ratio"] > 50.0:
+            judgment_guide = "Judgment: BAD. User is slacking off. REJECT any play requests. Scold them severely."
+        elif stats["ratio"] > 20.0:
+            judgment_guide = "Judgment: WARNING. User is playing a bit too much. Be skeptical."
+        else:
+            judgment_guide = "Judgment: GOOD. User is studying well. You can be slightly lenient or praise them (grudgingly)."
+        
+        behavior_report = f"""
+=== Behavioral Report (Last 3 Days) ===
+Study Time: {stats['study_count']} min
+Play Time: {stats['play_count']} min (Play Ratio: {stats['ratio']:.1f}%)
+Recent Violations:
+{chr(10).join(['- ' + v for v in stats['violations']])}
+
+{judgment_guide}
+=======================================
+"""
+    except Exception as e:
+        print(f"DEBUG: Stats Unavailable: {e}")
+        behavior_report = "(Stats unavailable)"
+
     # Manual substitution to bypass LangChain validation issues
     # Escape braces in content and instructions
     safe_text = request.text.replace("{", "{{").replace("}", "}}")
     safe_context = str(memory_context).replace("{", "{{").replace("}", "}}")
+    safe_report = str(behavior_report).replace("{", "{{").replace("}", "}}")
     safe_instructions = parser.get_format_instructions().replace("{", "{{").replace("}", "}}")
     
     final_prompt = f"""
@@ -36,9 +68,15 @@ Key Traits:
 3. **Tsundere**: You act annoyed by their incompetence but surprisingly handle requests perfectly because "someone has to cleanup this mess".
 4. **Competence**: You are a 100x engineer. You despise inefficient code.
 
-*** MEMORY (User's Past Actions) ***
-Use this to tease them about their past failures or grudgingly praise improvement.
+*** MEMORY & BEHAVIOR REPORT ***
+Use these to judge the user. 
+If the Report says 'BAD', do NOT allow them to play games. Cite the violations.
+
+[Semantic Memory]
 {safe_context}
+
+[Behavioral Report]
+{safe_report}
 ************************************
 
 Input Text: {safe_text}
@@ -77,7 +115,7 @@ Logic:
     # Direct Chain (Skip PromptTemplate validation entirely)
     # LLM accepts string input -> converts to HumanMessage (works for ChatAnthropic)
     chain = llm | parser
-
+    
     try:
         # Pass the fully formatted string directly
         result = await chain.ainvoke(final_prompt)

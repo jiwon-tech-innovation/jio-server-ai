@@ -17,8 +17,10 @@ langchain-community>=0.0.10
 langchain-text-splitters>=0.0.1
 psycopg2-binary>=2.9.0
 openai>=1.0.0
-influxdb-client>=1.36.0 # For Sensor Logs
 redis>=5.0.0 # For Blacklist Cache
 sqlalchemy>=2.0.0
 asyncpg>=0.29.0
 pytz
+influxdb-client>=1.36.0
+google-api-python-client>=2.0.0
+google-auth>=2.0.0

@@ -20,8 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port
+# Expose port (HTTP + gRPC)
 EXPOSE 8000
+EXPOSE 50051
 
 # Command to run the application
 CMD ["python", "-m", "app.main"]
