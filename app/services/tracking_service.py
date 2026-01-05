@@ -17,9 +17,11 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
             msg = "OK"
             
             for app in apps:
+                app_lower = app.lower()
                 for bad in SERVER_BLACKLIST:
-                    if bad.lower() in app.lower():
-                        kill_target = app
+                    # [HARDENING] Case-insensitive + Partial Match
+                    if bad.lower() in app_lower:
+                        kill_target = app # Use original name for Process.Kill
                         command = "KILL"
                         msg = f"서버 감지: {app} 실행이 감지되었습니다. 강제 종료합니다."
                         print(f"🚫 [Tracking] SERVER DETECTED BLACKLIST: {app}")

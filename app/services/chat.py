@@ -116,30 +116,32 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
     """
 
 
+    # [HARDENING] Robust JSON Extraction
     try:
         # LLM 호출
         response_msg = await llm.ainvoke(final_prompt)
         raw_content = response_msg.content
         
-        # Regex로 JSON 부분만 추출 (가장 바깥쪽 {} 찾기)
-        # re.DOTALL을 써서 개행문자 포함 매칭
+        # 1. Attempt to find JSON object in the output
+        # Look for the first outer-most {} pair
         json_match = re.search(r'(\{.*\})', raw_content, re.DOTALL)
         
         if json_match:
             json_str = json_match.group(1)
+            # 2. Cleanup potential trailing commas or markdown ticks if inside
+            json_str = json_str.replace("```json", "").replace("```", "")
             data = json.loads(json_str)
             return ChatResponse(**data)
         else:
-            # 매칭 실패 시 원본 로그
             print(f"❌ JSON Parse Failed. Raw: {raw_content}")
-            raise ValueError("No JSON object found in response")
+            raise ValueError("No JSON object found")
 
     except Exception as e:
         print(f"Chat Error: {e}")
-        # 파싱 실패 시 사용자에게 에러 대신 츤데레 멘트 반환
+        # FALLBACK: Safe Response (Client won't crash)
         return ChatResponse(
             intent="CHAT",
             judgment="NEUTRAL",
             action_code="NONE",
-            message="뭐라고요? 웅얼거리지 말고 똑바로 말해요! 다시 한번 말해봐요, 허접♡"
+            message="... (시스템 통신 장애다. 흥.)"
         )
