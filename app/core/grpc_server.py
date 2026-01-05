@@ -301,6 +301,22 @@ async def serve_grpc():
             intelligence_servicer.TranscribeAudio,
         ),
     }
+
+    # 3. TrackingService 등록 (New Hybrid Logic)
+    from app.services.tracking_service import TrackingService
+    tracking_servicer = TrackingService()
+    
+    tracking_rpc_handlers = {
+        'SendAppList': unary_unary_rpc_method_handler(
+            tracking_servicer.SendAppList,
+        )
+    }
+    
+    generic_handler_tracking = grpc.method_handlers_generic_handler(
+        'jiaa.tracking.TrackingService',
+        tracking_rpc_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler_tracking,))
     
     generic_handler = grpc.method_handlers_generic_handler(
         'jiaa.IntelligenceService', 

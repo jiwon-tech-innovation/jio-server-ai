@@ -10,7 +10,7 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     Intelligent Chatbot with Tsundere Persona.
     Uses Claude 3.5 Haiku.
     """
-    llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.7) 
+    llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.1) 
     
     # [MEMORY INTEG] Retrieve Context
     try:
@@ -97,9 +97,10 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
 
     except Exception as e:
         print(f"Chat Error: {e}")
+        # 파싱 실패 시 사용자에게 에러 대신 츤데레 멘트 반환
         return ChatResponse(
-            intent="SYSTEM",
+            intent="CHAT",
             judgment="NEUTRAL",
             action_code="NONE",
-            message=f"시스템 오류거든요? ({str(e)})"
+            message="뭐라고요? 웅얼거리지 말고 똑바로 말해요! 다시 한번 말해봐요, 허접♡"
         )
