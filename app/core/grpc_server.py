@@ -70,7 +70,7 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             "type": chat_response.intent,           # intent (COMMAND/CHAT)
             "command": chat_response.action_code,   # action_code (OPEN_APP, etc.)
             "parameter": chat_response.action_detail or "",  # action_detail
-            "emotion": chat_response.emotion or "NEUTRAL"    # emotion tag
+            "emotion": chat_response.emotion or "NORMAL"    # emotion tag
         }
         
         final_intent = json.dumps(intent_data, ensure_ascii=False)

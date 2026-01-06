@@ -33,18 +33,22 @@ class KafkaProducerWrapper:
     async def send_message(self, topic: str, message: dict):
         """
         Sends a JSON message to a Kafka topic.
-        Non-blocking (fire and forget), but logs errors.
+        Non-blocking (fire and forget usage via background task).
         """
         if self.producer is None:
             print("[Kafka] ⚠️ Producer is not initialized. Skipping message send.")
             return
 
-        try:
-            value_json = json.dumps(message).encode("utf-8")
-            await self.producer.send_and_wait(topic, value_json)
-            print(f"[Kafka] 📤 Sent message to '{topic}': {message}")
-        except Exception as e:
-            print(f"[Kafka] ❌ Failed to send message: {e}")
+        async def _background_send(topic, message):
+            try:
+                value_json = json.dumps(message).encode("utf-8")
+                await self.producer.send_and_wait(topic, value_json)
+                print(f"[Kafka] 📤 Sent message to '{topic}': {message}")
+            except Exception as e:
+                print(f"[Kafka] ❌ Failed to send message: {e}")
+
+        # Fire and forget (don't await)
+        asyncio.create_task(_background_send(topic, message))
 
 # Global Instance
 kafka_producer = KafkaProducerWrapper()

@@ -4,6 +4,7 @@ from app.schemas.intelligence import ChatRequest, ChatResponse
 from app.services.memory_service import memory_service
 import re
 import json
+import asyncio
 
 
 from app.services.statistic_service import statistic_service
@@ -15,19 +16,32 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     """
     llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.1) 
     
-    # [MEMORY INTEG] Retrieve Context
-    try:
-        memory_context = memory_service.get_user_context(request.text)
-    except Exception as e:
-        print(f"DEBUG: Memory Context Unavailable: {e}")
-        memory_context = ""
+    # [OPTIMIZATION] Parallel Context Retrieval
+    memory_context = ""
+    stats = {"ratio": 0.0, "study_count": 0, "play_count": 0, "violations": []}
+    behavior_report = "(Stats unavailable)"
 
-    # 2. [HYBRID INTEG] Retrieve Behavioral Stats (InfluxDB)
-    behavior_report = ""
-    try:
-        # InfluxDB service does not need 'db' session
-        stats = await statistic_service.get_recent_summary(user_id="dev1", days=3)
-        
+    async def get_memory():
+        try:
+            return memory_service.get_user_context(request.text)
+        except Exception as e:
+            print(f"DEBUG: Memory Context Unavailable: {e}")
+            return ""
+
+    async def get_stats():
+        try:
+            return await statistic_service.get_recent_summary(user_id="dev1", days=3)
+        except Exception as e:
+            print(f"DEBUG: Stats Unavailable: {e}")
+            return None
+
+    # Run in parallel
+    results = await asyncio.gather(get_memory(), get_stats())
+    memory_context = results[0]
+    stats_result = results[1]
+
+    if stats_result:
+        stats = stats_result
         # Judgment Logic for Prompt
         if stats["ratio"] > 50.0:
             judgment_guide = "Judgment: BAD. User is slacking off. REJECT any play requests. Scold them severely."
@@ -46,9 +60,6 @@ Recent Violations:
 {judgment_guide}
 =======================================
 """
-    except Exception as e:
-        print(f"DEBUG: Stats Unavailable: {e}")
-        behavior_report = "(Stats unavailable)"
 
     # Manual substitution to bypass LangChain validation issues
     # Escape braces in content and instructions
