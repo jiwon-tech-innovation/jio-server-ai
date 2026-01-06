@@ -2,6 +2,7 @@ import grpc
 import json
 from app.protos import tracking_pb2, tracking_pb2_grpc
 from app.core.config import get_settings
+from app.core.kafka import kafka_producer
 
 class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
     # Dynamic Memory for AI Learning
@@ -135,6 +136,18 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
                         # [AI INTEG] Generate fresh scolding even for known games
                         msg = await self._generate_scolding(app_name)
                         print(f"🚫 [Tracking] SERVER DETECTED BLACKLIST: {app_name}")
+                        
+                        # [Kafka] Send Scolding Event (Fire & Forget)
+                        await kafka_producer.send_event(
+                            topic=get_settings().KAFKA_TOPIC_FEEDBACK,
+                            event_type="SCOLDING",
+                            payload={
+                                "target_app": app_name,
+                                "message": msg,
+                                "emotion": "ANGRY",
+                                "source": "STATIC_BLACKLIST"
+                            }
+                        )
                         break
                 if command == "KILL":
                     break
@@ -173,6 +186,18 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
                             kill_target = target
                             command = "KILL"
                             msg = detect_res.message
+                            
+                            # [Kafka] Send Scolding Event
+                            await kafka_producer.send_event(
+                                topic=get_settings().KAFKA_TOPIC_FEEDBACK,
+                                event_type="SCOLDING",
+                                payload={
+                                    "target_app": target,
+                                    "message": msg,
+                                    "emotion": "ANGRY",
+                                    "source": "AI_GAME_DETECTOR"
+                                }
+                            )
                         else:
                             # AI said safe: Add to Whitelist
                             # print(f"✅ [Tracking] AI Verified Safe: {unknown_apps}")

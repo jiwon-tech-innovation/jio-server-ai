@@ -5,6 +5,7 @@ settings = get_settings()
 
 from contextlib import asynccontextmanager
 from app.services.memory_service import memory_service
+from app.core.kafka import kafka_producer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,6 +17,9 @@ async def lifespan(app: FastAPI):
     try:
         await memory_service.consolidate_memory()
         print("Memory consolidation complete.")
+        
+        # Stop Kafka
+        await kafka_producer.stop()
     except Exception as e:
         print(f"Error during shutdown memory consolidation: {e}")
 
