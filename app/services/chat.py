@@ -54,6 +54,7 @@ Recent Violations:
     # Escape braces in content and instructions
     safe_text = request.text.replace("{", "{{").replace("}", "}}")
     safe_context = str(memory_context).replace("{", "{{").replace("}", "}}")
+    safe_report = behavior_report.replace("{", "{{").replace("}", "}}")
 
     
     final_prompt = f"""
