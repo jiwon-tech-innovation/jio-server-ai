@@ -58,5 +58,7 @@ class ChatResponse(BaseModel):
     judgment: str # STUDY, PLAY, NEUTRAL
     action_code: str # OPEN_APP, NONE, BLOCK_APP, MINIMIZE_APP, KILL_APP
     action_detail: Optional[str] = "" # "VSCode"
+    action_detail: Optional[str] = "" # "VSCode"
     message: str # "오, 드디어..."
+    emotion: Optional[str] = "NORMAL" # "NORMAL", "ANGRY", "LOVE", "SILLY", "STUNNED", "CRY", "LAUGH", "PUZZLE"
 
