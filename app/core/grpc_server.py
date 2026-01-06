@@ -54,6 +54,15 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
         # 🎤 로그: 사용자가 말한 내용 출력
         print(f"🗣️ [STT] User said: \"{user_text}\"")
 
+        # 1-1. Empty Check (Prevent Bedrock Error)
+        if not user_text or not user_text.strip():
+            print("[Server] Empty transcription, skipping AI.")
+            return audio_pb2.AudioResponse(
+                transcript="(No speech detected)",
+                is_emergency=False,
+                intent="{}"
+            )
+
         # 2. Chat (Tsundere Response)
         chat_request = ChatRequest(text=user_text)
         # TODO: Pass context to Chat if supported
