@@ -12,6 +12,10 @@ import json
 from app.protos import audio_pb2, audio_pb2_grpc
 from app.services import stt, classifier, chat
 from app.schemas.intelligence import ClassifyRequest, ChatRequest, SolveRequest
+from app.core.kafka import kafka_producer
+from app.core.config import get_settings
+
+settings = get_settings()
 
 
 class AudioService(audio_pb2_grpc.AudioServiceServicer):
@@ -65,10 +69,16 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             "state": chat_response.judgment,        # judgment (STUDY/PLAY/NEUTRAL)
             "type": chat_response.intent,           # intent (COMMAND/CHAT)
             "command": chat_response.action_code,   # action_code (OPEN_APP, etc.)
-            "parameter": chat_response.action_detail or ""  # action_detail
+            "parameter": chat_response.action_detail or "",  # action_detail
+            "emotion": chat_response.emotion or "NEUTRAL"    # emotion tag
         }
         
         final_intent = json.dumps(intent_data, ensure_ascii=False)
+
+        # 4. [Integrations] Send to Kafka (Dev 4)
+        if intent_data["type"] == "COMMAND" or intent_data["state"] in ["STUDY", "PLAY"]:
+            print(f"🚀 [gRPC] Forwarding Decision to Kafka: {settings.KAFKA_TOPIC_AI_INTENT}")
+            await kafka_producer.send_message(settings.KAFKA_TOPIC_AI_INTENT, intent_data)
 
         return audio_pb2.AudioResponse(
             transcript=user_text,
