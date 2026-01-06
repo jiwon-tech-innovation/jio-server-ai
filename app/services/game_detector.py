@@ -29,19 +29,17 @@ Input Apps:
    - System Processes (Finder, WindowServer, etc.)
 3. **Steam/Launchers**: If "steam_osx" or "Battle.net" is running, count it as a game (the user is likely browsing games or playing).
 
-Output JSON with:
-- is_game_detected: true/false
-- target_app: The name of the MAIN game process found (or null).
-- detected_games: List of all game names found.
-- message: A strict message scolding the user if a game is found.
-- confidence: 0.0 to 1.0 (1.0 if sure).
-
-{format_instructions}
-
-IMPORTANT: Output ONLY the JSON object.
+Output strictly valid JSON only. No markdown, no "```json" blocks, no conversation.
+Example format:
+{{
+    "is_game_detected": true,
+    "target_app": "League of Legends",
+    "detected_games": ["League of Legends"],
+    "message": "Do not play games during work hours!",
+    "confidence": 1.0
+}}
         """,
         input_variables=["apps"],
-        partial_variables={"format_instructions": parser.get_format_instructions()},
     )
     chain = prompt | llm | parser
 
@@ -49,6 +47,7 @@ IMPORTANT: Output ONLY the JSON object.
         result = await chain.ainvoke({
             "apps": apps_str
         })
+        print(f"[GameDetector] Result: {result}")
         return result
 
     except Exception as e:
