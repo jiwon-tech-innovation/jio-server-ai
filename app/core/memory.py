@@ -1,5 +1,6 @@
 import boto3
 import os
+import chromadb
 from langchain_aws import BedrockEmbeddings
 from langchain_community.vectorstores import Chroma
 from app.core.config import get_settings
@@ -25,13 +26,23 @@ def get_vector_store():
     """
     Returns the Persistent Chroma VectorStore.
     """
-    persist_directory = os.path.join(os.getcwd(), "chroma_db")
-    
-    return Chroma(
-        collection_name="jiaa_memory",
-        embedding_function=get_embeddings(),
-        persist_directory=persist_directory
-    )
+    if "jiaa-system" in settings.CHROMA_HOST or settings.CHROMA_HOST != "localhost":
+        # Remote Connection (Production)
+        print(f"[Memory] Connecting to Remote ChromaDB at {settings.CHROMA_HOST}:{settings.CHROMA_PORT}")
+        client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+        return Chroma(
+            client=client,
+            collection_name="jiaa_memory",
+            embedding_function=get_embeddings(),
+        )
+    else:
+        # Local Fallback
+        persist_directory = os.path.join(os.getcwd(), "chroma_db")
+        return Chroma(
+            collection_name="jiaa_memory",
+            embedding_function=get_embeddings(),
+            persist_directory=persist_directory
+        )
 
 def get_long_term_store():
     """

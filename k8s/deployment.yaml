@@ -80,6 +80,12 @@ spec:
             secretKeyRef:
               name: jiaa-influx-secret
               key: token
+
+        # Cloud-Native Overrides (Internal K8s DNS)
+        - name: CHROMA_HOST
+          value: "chroma-service.jiaa-system"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka.kafka.svc.cluster.local:9092"
         
         # Probes
         livenessProbe:

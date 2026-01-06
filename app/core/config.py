@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     PG_PASSWORD: str = os.getenv("PG_PASSWORD", "password")
     PG_DB: str = os.getenv("PG_DB", "jiaa_memory")
 
+    # Short-Term Memory (ChromaDB)
+    CHROMA_HOST: str = os.getenv("CHROMA_HOST", "localhost")
+    CHROMA_PORT: int = int(os.getenv("CHROMA_PORT", "8000"))
+
     # Sensor Fusion (InfluxDB)
     INFLUXDB_URL: str = os.getenv("INFLUXDB_URL", "http://localhost:8086")
     INFLUXDB_ORG: str = os.getenv("INFLUXDB_ORG", "jiaa")
@@ -34,7 +38,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     # Kafka (Event Bus)
-    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka.kafka.svc.cluster.local:9092")
+    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     KAFKA_TOPIC_FEEDBACK: str = "jiaa.events.feedback"
 
     class Config:
