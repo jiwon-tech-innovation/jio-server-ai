@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
+    # Kafka (Message Broker)
+    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka.kafka.svc:9092")
+    KAFKA_TOPIC_AI_INTENT: str = os.getenv("KAFKA_TOPIC_AI_INTENT", "jiaa.ai.intent")
+
     class Config:
         case_sensitive = True
 
