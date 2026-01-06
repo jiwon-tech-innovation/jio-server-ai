@@ -15,9 +15,14 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     """
     llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.1) 
     
-    # [MEMORY INTEG] Retrieve Context
+    # [MEMORY INTEG] Retrieve Context (Now includes Redis Chat History)
+    user_id = "dev1" # Default User
     try:
-        memory_context = memory_service.get_user_context(request.text)
+        # Save User's Input First using await
+        await memory_service.add_chat_log(user_id, "User", request.text)
+        
+        # Get Context
+        memory_context = await memory_service.get_user_context(user_id, request.text)
     except Exception as e:
         print(f"DEBUG: Memory Context Unavailable: {e}")
         memory_context = ""
@@ -72,7 +77,7 @@ Key Traits:
 Use these to judge the user. 
 If the Report says 'BAD', do NOT allow them to play games. Cite the violations.
 
-[Semantic Memory]
+[Semantic & Ephemeral Memory]
 {safe_context}
 
 [Behavioral Report]
@@ -133,6 +138,10 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
         if json_match:
             json_str = json_match.group(1)
             data = json.loads(json_str)
+            
+            # Save AI Response
+            await memory_service.add_chat_log(user_id, "Alpine", data.get("message", ""))
+            
             return ChatResponse(**data)
         else:
             # 매칭 실패 시 원본 로그

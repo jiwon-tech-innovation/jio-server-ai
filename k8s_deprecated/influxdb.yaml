@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: jiaa-influxdb
+  labels:
+    app: jiaa-influxdb
+spec:
+  serviceName: "jiaa-influxdb"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jiaa-influxdb
+  template:
+    metadata:
+      labels:
+        app: jiaa-influxdb
+    spec:
+      containers:
+      - name: influxdb
+        image: influxdb:2.7-alpine
+        ports:
+        - containerPort: 8086
+          name: http
+        env:
+        # Auto-Initialization Config
+        - name: DOCKER_INFLUXDB_INIT_MODE
+          value: "setup"
+        - name: DOCKER_INFLUXDB_INIT_USERNAME
+          value: "admin"
+        - name: DOCKER_INFLUXDB_INIT_PASSWORD
+          value: "jiaa1234!!" # Secure enough for internal dev
+        - name: DOCKER_INFLUXDB_INIT_ORG
+          value: "jiaa"
+        - name: DOCKER_INFLUXDB_INIT_BUCKET
+          value: "sensor_data"
+        - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+          value: "my-token" # Matches config.py default
+        volumeMounts:
+        - name: influxdb-data
+          mountPath: /var/lib/influxdb2
+  volumeClaimTemplates:
+  - metadata:
+      name: influxdb-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jiaa-influxdb
+spec:
+  type: ClusterIP
+  selector:
+    app: jiaa-influxdb
+  ports:
+  - port: 8086
+    targetPort: 8086
+    protocol: TCP
+    name: http

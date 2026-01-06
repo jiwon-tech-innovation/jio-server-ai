@@ -3,25 +3,65 @@ from app.core.memory import get_vector_store, get_long_term_store
 from langchain_core.documents import Document
 from app.core.llm import get_llm, HAIKU_MODEL_ID
 from langchain_core.prompts import PromptTemplate
+from app.core.redis_client import get_redis_client
+import json
 
 class MemoryService:
     def __init__(self):
-        # STM: Short-Term Memory (Chroma)
-        self.stm = get_vector_store()
+        # STM: Short-Term Memory (Redis for Chat)
+        self.redis = get_redis_client()
+        
+        # Event Memory: Significant Events (Chroma)
+        self.event_store = get_vector_store()
+        
         # LTM: Long-Term Memory (PGVector)
         self.ltm = get_long_term_store()
 
+    async def add_chat_log(self, user_id: str, role: str, content: str):
+        """
+        Saves chat log to Redis List (Sliding Window).
+        Format: "Role: Content"
+        """
+        key = f"chat_history:{user_id}"
+        entry = json.dumps({"role": role, "content": content, "timestamp": datetime.now().isoformat()})
+        
+        try:
+            # Push to right (newest)
+            await self.redis.rpush(key, entry)
+            # Trim to keep last 20 turns (User + AI = 10 pairs)
+            await self.redis.ltrim(key, -20, -1)
+        except Exception as e:
+            print(f"Redis Push Error: {e}")
+
+    async def get_recent_chat(self, user_id: str, k: int = 10) -> str:
+        """
+        Retrieves recent k chat logs from Redis.
+        """
+        key = f"chat_history:{user_id}"
+        try:
+            # Get last k items
+            logs = await self.redis.lrange(key, -k, -1)
+            formatted_logs = []
+            for log in logs:
+                data = json.loads(log)
+                formatted_logs.append(f"{data['role']}: {data['content']}")
+            return "\n".join(formatted_logs)
+        except Exception as e:
+            print(f"Redis Fetch Error: {e}")
+            return ""
+
     def _save_event(self, content: str, event_type: str, metadata: dict = None):
         """
-        Saves event to Short-Term Memory (Chroma).
+        Saves significant EVENT to VectorDB (Chroma).
+        NOT for casual chat.
         """
         if metadata is None: metadata = {}
         timestamp = datetime.now().isoformat()
         metadata.update({"event_type": event_type, "timestamp": timestamp})
         
         doc = Document(page_content=content, metadata=metadata)
-        self.stm.add_documents([doc])
-        print(f"DEBUG: STM Saved [{event_type}] {content}")
+        self.event_store.add_documents([doc])
+        print(f"DEBUG: Event Saved [{event_type}] {content}")
 
     def save_violation(self, content: str, source: str = "Unknown"):
         self._save_event(
@@ -37,102 +77,100 @@ class MemoryService:
             metadata={"category": "STUDY"}
         )
     
-    def get_user_context(self, query: str) -> str:
+    async def get_user_context(self, user_id: str, query: str) -> str:
         """
-        Retrieves context from BOTH Short-Term (STM) and Long-Term (LTM).
+        Retrieves context from:
+        1. Redis (Recent Chat)
+        2. Chroma (Recent Events)
+        3. LTM (Deep History)
         """
         context = "=== Memory Context ===\n"
         
-        # 1. STM Search (Recent Context)
+        # 1. Redis (Chat History) -> STM
+        chat_history = await self.get_recent_chat(user_id, k=10)
+        if chat_history:
+            context += "[Recent Conversation (STM)]\n"
+            context += chat_history + "\n"
+        
+        # 2. Chroma (Recent Events) -> Episodic
         try:
-            stm_docs = self.stm.similarity_search(query, k=3)
-            if stm_docs:
-                context += "[Recent Short-Term Memories]\n"
-                for doc in stm_docs:
+            # Search for events related to the query OR just recent events?
+            # Query-based is better for relevance.
+            event_docs = self.event_store.similarity_search(query, k=2)
+            if event_docs:
+                context += "\n[Recent Events (Episodic)]\n"
+                for doc in event_docs:
                     ts = doc.metadata.get("timestamp", "")[:16].replace("T", " ")
                     context += f"- [{ts}] {doc.page_content}\n"
         except Exception as e:
-            print(f"STM Search Error: {e}")
+            print(f"Event Search Error: {e}")
 
-        # 2. LTM Search (Deep History)
+        # 3. LTM Search (Deep History)
         if self.ltm:
             try:
                 ltm_docs = self.ltm.similarity_search(query, k=2)
                 if ltm_docs:
                     context += "\n[Long-Term History & Persona]\n"
                     for doc in ltm_docs:
-                        # LTM might store summaries, so just show content
                         context += f"- {doc.page_content}\n"
             except Exception as e:
-                print(f"LTM Search Error: {e}") # Likely DB connection fail
+                print(f"LTM Search Error: {e}")
         
         context += "======================\n"
         return context
 
     def get_daily_activities(self, date_str: str = None) -> list[str]:
         """
-        Retrieves all activity logs for a specific date (default: today).
-        Returns a list of strings suitable for the blog post.
+        Retrieves activity logs for a specific date from Chroma (Event Store).
         """
         if not date_str:
             date_str = datetime.now().strftime("%Y-%m-%d")
             
         print(f"DEBUG: Fetching activities for {date_str}...")
         
-        # In a real vector store, we should use metadata filter: {"timestamp": ...}
-        # But since timestamp is ISO format, partial match might be tricky in Chroma simple filter.
-        # We will fetch 'k=100' most recent and filter in Python.
-        
         activities = []
         try:
-            # Broad search to get recent logs
-            today_docs = self.stm.similarity_search("User study and play log", k=50)
+            # Broad search in Event Store
+            today_docs = self.event_store.similarity_search("User study and play log", k=50)
             
             for doc in today_docs:
-                # Timestamp format: 2026-01-04T...
                 ts = doc.metadata.get("timestamp", "")
                 if ts.startswith(date_str):
-                    # Format: "[14:30] Content (Category)"
-                    time_part = ts[11:16] # HH:MM
+                    time_part = ts[11:16]
                     category = doc.metadata.get("category", "General")
                     activities.append(f"[{time_part}] {doc.page_content} ({category})")
                     
-            # Sort by time just in case
             activities.sort()
             
         except Exception as e:
-            print(f"STM Fetch Error: {e}")
-            return ["(기록을 불러오는 중 에러가 발생했습니다.)"]
+            print(f"Event Fetch Error: {e}")
+            return ["(Error loading activities)"]
             
         if not activities:
-            return ["(오늘의 특별한 활동 기록이 없습니다. 숨쉬기 운동 정도?)"]
+            return ["(No special activities recorded today.)"]
             
         return activities
 
     async def consolidate_memory(self):
         """
         [Sleep Routine]
-        1. Reads all STM events (Chroma).
-        2. Summarizes them using LLM.
-        3. Saves summary to LTM (PGVector).
-        4. Clears STM.
+        Summarizes Chroma Events -> LTM.
+        (Redis Chat History is strictly ephemeral and acts as sliding window buffer, maybe summarize it too?)
         """
         if not self.ltm:
-            print("ERROR: LTM (Postgres) is not available. Skipping consolidation.")
             return
 
-        # 1. Fetch recent events (Naive approach: get all by dummy query or logic)
-        # Since Chroma doesn't support 'get all' easily without ID, we search broadly
-        # For production, better to peek or query by date. 
-        # Here we simulate by searching for generic terms covering everything.
-        events = self.stm.similarity_search("User activity log", k=50) # Hacky fetch
+        # Fetch Events
+        events = self.event_store.similarity_search("User activity log", k=50)
+        
+        # Ideally we should also fetch today's chat history from Redis if we want to summarize conversation?
+        # extra_chats = await self.get_recent_chat("dev1", k=50) 
+        
         if not events:
-            print("Consolidation: No recent memories found.")
             return
 
         log_text = "\n".join([f"- {d.page_content}" for d in events])
         
-        # 2. Summarize via LLM
         llm = get_llm(model_id=HAIKU_MODEL_ID)
         prompt = f"""
         Summarize the following user activity logs into a concise diary entry.
@@ -146,19 +184,12 @@ class MemoryService:
         summary_text = summary.content
         print(f"DEBUG: Daily Summary: {summary_text}")
 
-        # 3. Save to LTM
         try:
             self.ltm.add_texts(
                 [summary_text], 
                 metadatas=[{"event_type": "DAILY_SUMMARY", "date": datetime.now().strftime("%Y-%m-%d")}]
             )
             print("DEBUG: Saved summary to LTM.")
-            
-            # 4. Flush STM (In Chroma file mode, difficult to delete all without ID)
-            # For now, we assume 'reset' or just keep appending until file rotation.
-            # Ideally: self.stm.delete_collection() -> re-init
-            print("WARNING: STM flush not fully implemented for Chroma (File Mode).")
-            
         except Exception as e:
             print(f"ERROR: Consolidation Failed: {e}")
 

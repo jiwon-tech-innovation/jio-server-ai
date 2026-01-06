@@ -11,6 +11,9 @@ service TrackingService {
   
   // 실행 중인 앱 목록 전송 (변경 시에만)
   rpc SendAppList(AppListRequest) returns (AppListResponse);
+  
+  // 클립보드 전송 (보안)
+  rpc SendClipboard(ClipboardRequest) returns (ClipboardResponse);
 }
 
 // ==================== Audio ====================
@@ -40,4 +43,18 @@ message AppListResponse {
   string message = 2;         // 응답 메시지
   string command = 3;         // 명령 (e.g. "KILL")
   string target_app = 4;      // 대상 앱 (e.g. "Minecraft")
+}
+
+// ==================== Clipboard ====================
+
+message ClipboardRequest {
+  bytes encrypted_content = 1; // AES-GCM Encrypted Text
+  bytes session_key = 2;       // RSA Encrypted AES Key
+  bytes iv = 3;                // AES IV
+  int64 timestamp = 4;
+}
+
+message ClipboardResponse {
+  bool success = 1;
+  string message = 2;
 }

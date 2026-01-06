@@ -1,8 +1,13 @@
 import grpc
 import json
+import traceback
 from app.protos import tracking_pb2, tracking_pb2_grpc
+from app.core.security import get_security_service
 
 class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
+    def __init__(self):
+        self.security_service = get_security_service()
+
     async def SendAppList(self, request, context):
         try:
             apps = json.loads(request.apps_json)
@@ -36,3 +41,36 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
         except Exception as e:
             print(f"❌ [Tracking] Service Error: {e}")
             return tracking_pb2.AppListResponse(success=False, message=str(e))
+
+    async def SendClipboard(self, request, context):
+        """
+        Receives simple AES-encrypted clipboard text.
+        Decrypts it using RSA-decrypted valid session key.
+        """
+        try:
+            encrypted_content = request.encrypted_content
+            encrypted_session_key = request.session_key
+            iv = request.iv
+            
+            # 1. Decrypt Session Key
+            aes_key = self.security_service.decrypt_session_key(encrypted_session_key)
+            
+            # 2. Decrypt Content
+            plaintext_bytes = self.security_service.decrypt_aes(encrypted_content, aes_key, iv)
+            clipboard_text = plaintext_bytes.decode('utf-8')
+            
+            print(f"📋 [Clipboard] Decrypted: {clipboard_text}")
+            
+            # TODO: Store or Analyze clipboard_text
+            
+            return tracking_pb2.ClipboardResponse(
+                success=True,
+                message="Clipboard Received & Decrypted"
+            )
+        except Exception as e:
+            print(f"❌ [Clipboard] Decryption Error: {e}")
+            traceback.print_exc()
+            return tracking_pb2.ClipboardResponse(
+                success=False,
+                message=f"Decryption Failed: {str(e)}"
+            )
