@@ -6,14 +6,14 @@ from langchain_core.prompts import PromptTemplate
 
 class MemoryService:
     def __init__(self):
-        # STM: Short-Term Memory (Chroma)
+        # STM: Short-Term Memory (Redis)
         self.stm = get_vector_store()
         # LTM: Long-Term Memory (PGVector)
         self.ltm = get_long_term_store()
 
     def _save_event(self, content: str, event_type: str, metadata: dict = None):
         """
-        Saves event to Short-Term Memory (Chroma).
+        Saves event to Short-Term Memory (Redis).
         """
         if metadata is None: metadata = {}
         timestamp = datetime.now().isoformat()
@@ -112,7 +112,7 @@ class MemoryService:
     async def consolidate_memory(self):
         """
         [Sleep Routine]
-        1. Reads all STM events (Chroma).
+        1. Reads all STM events (Redis).
         2. Summarizes them using LLM.
         3. Saves summary to LTM (PGVector).
         4. Clears STM.
@@ -122,7 +122,7 @@ class MemoryService:
             return
 
         # 1. Fetch recent events (Naive approach: get all by dummy query or logic)
-        # Since Chroma doesn't support 'get all' easily without ID, we search broadly
+        # Since Redis doesn't support 'get all' easily without specific query, we search broadly
         # For production, better to peek or query by date. 
         # Here we simulate by searching for generic terms covering everything.
         events = self.stm.similarity_search("User activity log", k=50) # Hacky fetch

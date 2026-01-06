@@ -9,7 +9,7 @@ async def consolidate_memory(background_tasks: BackgroundTasks):
     Triggers memory consolidation manually.
     Called by Desktop Client on shutdown.
     
-    1. Summarizes Short-Term Memory (Chroma).
+    1. Summarizes Short-Term Memory (Redis).
     2. Saves summary to Long-Term Memory (Postgres LTM).
     3. Clears Short-Term Memory.
     """
