@@ -21,13 +21,14 @@ Input Apps:
 {apps}
 
 *** CRITICAL RULES ***
-1. **Target**: Identify explicit video games (e.g., "League of Legends", "Minecraft", "Overwatch", "MapleStory", "Valorant", "Steam", "Battle.net").
+1. **Target**: Identify explicit video games (e.g., "League of Legends", "Minecraft", "Minecraft Launcher", "Overwatch", "MapleStory", "Valorant", "Riot Client", "Steam", "Battle.net").
 2. **Ignore**:
    - Web Browsers (Chrome, Safari, Firefox)
    - Development Tools (VS Code, Python, Terminal, iTerm2, Xcode)
    - Communication Apps (Discord, Slack, KakaoTalk) -> These are NOT games for this check.
    - System Processes (Finder, WindowServer, etc.)
-3. **Steam/Launchers**: If "steam_osx" or "Battle.net" is running, count it as a game (the user is likely browsing games or playing).
+3. **Web Games**: If a browser (Chrome/Safari) has a title like "shark.io", "agar.io", "play", "game", "minecraft", "roblox", count it as a GAME.
+4. **Steam/Launchers**: If "steam_osx" or "Battle.net" is running, count it as a game.
 
 Output strictly valid JSON only. No markdown, no "```json" blocks, no conversation.
 Example format:

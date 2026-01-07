@@ -17,7 +17,7 @@ langchain-community>=0.0.10
 langchain-text-splitters>=0.0.1
 psycopg2-binary>=2.9.0
 openai>=1.0.0
-redis>=5.0.0 # For Blacklist Cache
+redis==4.6.0 # Downgraded for LangChain Compatibility
 sqlalchemy>=2.0.0
 asyncpg>=0.29.0
 pytz
