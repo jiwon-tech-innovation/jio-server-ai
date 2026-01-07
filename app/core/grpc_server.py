@@ -73,6 +73,7 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
         chat_response = await chat.chat_with_persona(chat_request)
 
         # 3. Construct JSON Intent (스키마에 맞게 매핑)
+        # 3. Construct JSON Intent (스키마에 맞게 매핑)
         intent_data = {
             "text": chat_response.message,           # message → text
             "state": chat_response.judgment,        # judgment (STUDY/PLAY/NEUTRAL)
@@ -82,7 +83,12 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             "emotion": chat_response.emotion or "NORMAL"    # emotion tag
         }
         
-        final_intent = json.dumps(intent_data, ensure_ascii=False)
+        # [Multi-Command Support]
+        if chat_response.multi_actions:
+            print(f"🚀 [gRPC] Forwarding Multi-Actions: {len(chat_response.multi_actions)} items")
+            final_intent = json.dumps(chat_response.multi_actions, ensure_ascii=False)
+        else:
+            final_intent = json.dumps(intent_data, ensure_ascii=False)
 
         # 4. [Integrations] Send to Kafka (Dev 4)
         if intent_data["type"] == "COMMAND" or intent_data["state"] in ["STUDY", "PLAY"]:

@@ -8,19 +8,26 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# Initialize OpenAI Client
-# Assumes OPENAI_API_KEY is in env
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize OpenAI Client (Global)
+# Enforce 10s timeout to prevent hanging
+client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    timeout=10.0
+)
 
 async def transcribe_audio(file: UploadFile) -> STTResponse:
     """
     HTTP Wrapper: Transcribes UploadFile using OpenAI Whisper.
     """
-    file_content = await file.read()
-    # file.filename might be empty or blob
-    file_ext = file.filename.split('.')[-1] if '.' in file.filename else "mp3"
-    
-    return await transcribe_bytes(file_content, file_ext)
+    try:
+        file_content = await file.read()
+        # file.filename might be empty or blob
+        file_ext = file.filename.split('.')[-1] if '.' in file.filename else "mp3"
+        
+        return await transcribe_bytes(file_content, file_ext)
+    except Exception as e:
+        print(f"❌ Transcribe Upload Error: {e}")
+        return STTResponse(text="")
 
 def create_wav_header(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
     """
@@ -63,21 +70,21 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
              if not file_content.startswith(b'RIFF'):
                  file_content = create_wav_header(file_content, sample_rate=16000, channels=1, bits_per_sample=16)
                  file_ext = "wav"
-                 print(f"[STT] Converted raw PCM to WAV ({len(file_content)} bytes)")
+                 # print(f"[STT] Converted raw PCM to WAV ({len(file_content)} bytes)")
 
         # 🔧 Duration Check
         audio_bytes = len(file_content)
         # Approx duration for 16khz 16bit mono = 32000 bytes/sec
         duration_seconds = audio_bytes / 32000
-        if duration_seconds < 0.1: # Allow slightly shorter for quick commands
+        if duration_seconds < 0.3: # Increase threshold to reduce noise triggers
              print(f"[STT] ⚠️ Audio too short: {duration_seconds:.2f}s. Skipping.")
-             return STTResponse(text="(오디오가 너무 짧음)")
+             return STTResponse(text="")
 
         # Create a file-like object
         audio_file = io.BytesIO(file_content)
         audio_file.name = f"voice.{file_ext}" # OpenAI needs a filename
 
-        print("[STT] Calling OpenAI Whisper...")
+        print(f"[STT] Calling OpenAI Whisper... ({duration_seconds:.2f}s)")
         
         # Call OpenAI
         # Prompt guide: https://platform.openai.com/docs/guides/speech-to-text/prompting
@@ -86,15 +93,15 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
             model="whisper-1",
             file=audio_file,
             language="ko", # Force Korean as per spec
-            prompt="VSCode, Chrome, Youtube, Study mode, Play mode, AI, 코딩, 개발", 
+            prompt="VSCode, Chrome, Youtube, Study mode, Play mode, AI, 코딩, 개발, 유튜브, 롤, 알았어", 
             temperature=0.0
         )
         
         transcript_text = transcript.text
-        print(f"[STT] 🎤 Received Voice ({duration_seconds:.2f}s): \"{transcript_text}\"")
+        print(f"[STT] 🎤 Received Voice: \"{transcript_text}\"")
         
         return STTResponse(text=transcript_text)
 
     except Exception as e:
-        print(f"OpenAI Whisper Error: {e}")
-        return STTResponse(text=f"Error: {str(e)}")
+        print(f"❌ OpenAI Whisper Error: {e}")
+        return STTResponse(text="")

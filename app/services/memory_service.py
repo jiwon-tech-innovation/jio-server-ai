@@ -162,4 +162,59 @@ class MemoryService:
         except Exception as e:
             print(f"ERROR: Consolidation Failed: {e}")
 
+    async def get_recent_summary_markdown(self, topic: str) -> str:
+        """
+        Retrieves recent context about [topic] and generates a Markdown summary.
+        Used for 'GENERATE_NOTE' intent.
+        """
+    async def get_recent_summary_markdown(self, topic: str) -> str:
+        """
+        Retrieves recent context about [topic] and generates a Markdown summary.
+        Used for 'GENERATE_NOTE' intent.
+        Searches BOTH STM and LTM.
+        """
+        context_docs = []
+        
+        # 1. Search STM (Redis)
+        try:
+            stm_docs = self.stm.similarity_search(topic, k=5)
+            context_docs.extend(stm_docs)
+        except Exception as e:
+            print(f"DEBUG: STM Search failed in Note Gen: {e}")
+
+        # 2. Search LTM (Chroma/PG)
+        if self.ltm:
+            try:
+                ltm_docs = self.ltm.similarity_search(topic, k=5)
+                context_docs.extend(ltm_docs)
+            except Exception as e:
+                print(f"DEBUG: LTM Search failed in Note Gen: {e}")
+
+        if not context_docs:
+            return f"# {topic} Summary\nNo data found for this topic."
+
+        context_text = "\n".join([f"- {d.page_content}" for d in context_docs])
+
+        # 2. LLM Generation
+        llm = get_llm(model_id=HAIKU_MODEL_ID)
+        prompt = f"""
+        You are an expert technical writer.
+        Based on the following logs/context, creates a detailed STUDY NOTE in Markdown format.
+        
+        Topic: {topic}
+        Context:
+        {context_text}
+        
+        Requirements:
+        - Use Headers (#, ##).
+        - Use Bullet points.
+        - Include code blocks if implied.
+        - Language: Korean.
+        - Start directly with the # Header.
+        """
+        
+        response = await llm.ainvoke(prompt)
+        return response.content
+
+
 memory_service = MemoryService()
