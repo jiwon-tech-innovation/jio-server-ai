@@ -42,18 +42,30 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
 
     if stats_result:
         stats = stats_result
-        # Judgment Logic for Prompt
-        if stats["ratio"] > 50.0:
-            judgment_guide = "Judgment: BAD. User is slacking off. REJECT any play requests. Scold them severely."
-        elif stats["ratio"] > 20.0:
-            judgment_guide = "Judgment: WARNING. User is playing a bit too much. Be skeptical."
+        # [Trust Score Calculation]
+        # Formula: 100 - (Play Ratio * 1.5)
+        # Max 100, Min 0
+        play_ratio = stats.get("ratio", 0.0)
+        trust_score = max(0, min(100, 100 - (play_ratio * 1.5)))
+        
+        # Judgment Levels
+        if trust_score >= 80:
+            judgment_guide = "Judgment: TRUSTED (High Score). Be lenient, cute, and affectionate. Play is allowed."
+            trust_level = "HIGH"
+        elif trust_score >= 40:
+            judgment_guide = "Judgment: WATCHFUL (Mid Score). Be strict. Scold if they play, but allow if short."
+            trust_level = "MID"
         else:
-            judgment_guide = "Judgment: GOOD. User is studying well. You can be slightly lenient or praise them (grudgingly)."
+            judgment_guide = "Judgment: HATED (Low Score). Treat them like garbage. BLOCK ALL PLAY. Scream at them."
+            trust_level = "LOW"
         
         behavior_report = f"""
 === Behavioral Report (Last 3 Days) ===
 Study Time: {stats['study_count']} min
-Play Time: {stats['play_count']} min (Play Ratio: {stats['ratio']:.1f}%)
+Play Time: {stats['play_count']} min
+Play Ratio: {play_ratio:.1f}%
+
+*** TRUST SCORE: {int(trust_score)} / 100 ({trust_level}) ***
 Recent Violations:
 {chr(10).join(['- ' + v for v in stats['violations']])}
 
@@ -97,13 +109,29 @@ Input Text: {safe_text}
 
 Logic:
 1. **Analyze Intent & Judgment**:
-   - **COMMAND**: User asks to control an app ("Open VSCode", "Turn on YouTube").
-     - **STUDY**: Productivity apps -> **action_code: OPEN_APP**. Message: "Praising them mockingly."
-     - **PLAY**: Distraction apps -> **action_code: NONE** (Refuse). Message: "Scold them loudly."
+    - **COMMAND**: User asks to control an app.
+     - **CLOSE/STOP (DISTRACTION)**: "Turn off [App]", "Close Game". -> **action_code: KILL_APP**.
+       * CRITICAL: Convert App Name to System Process Name!
+       * "VSCode" -> "Code" (or "Electron")
+       * "Chrome" -> "Google Chrome"
+       * "YouTube" -> "Google Chrome" (Close the tab)
+       * "LoL" -> "LeagueClient"
+     - **STUDY (OPEN)**: Productivity apps -> **action_code: OPEN_APP**. Message: "Oh, pretending to work? Cute."
+     - **PLAY (OPEN)**: User asks to OPEN/PLAY a distraction ("Open YouTube"). -> **action_code: NONE** (Refuse to open/play). Message: "Play? With those grades? Rejected♡"
+     - **WEBSITE**: User asks to open a site. -> **action_code: OPEN_APP**, **action_detail: "https://..."**.
    - **CHAT**: General conversation, complaints.
      - **NEUTRAL**: Just talking. -> **action_code: NONE**.
    - **SYSTEM**: File operations.
-     - **STUDY**: Useful work. -> **action_code: WRITE_FILE**.
+     - **SUMMARIZE/NOTE**: "Summarize this topic", "Create a note for React". -> **action_code: GENERATE_NOTE**, **action_detail: [Topic]**.
+
+    **Priority Rule**: If the input contains a functional command (Open, Close, Turn on, Turn off), **YOU MUST generate the corresponding `action_code`**, even if you scold the user in the `message`. Do not set `action_code: NONE` for valid Close/Stop commands.
+
+    **Few-Shot Examples**:
+    - Input: "유튜브 꺼줘" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "action_detail": "YouTube", "message": "네, 공부나 하세요. 바로 꺼드릴게요."}}
+    - Input: "롤 그만할게" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "action_detail": "League of Legends", "message": "드디어 정신 차리셨군요?"}}
+    - Input: "노래 끄라고!" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "action_detail": "Music", "message": "알았어요! 소리지르지 마세요, 허접."}}
+    - Input: "유튜브 켜줘" -> {{"intent": "COMMAND", "judgment": "PLAY", "action_code": "NONE", "action_detail": "YouTube", "message": "공부 안 해요? 유튜브는 안 돼요."}}
+    - Input: "백준 켜줘" -> {{"intent": "COMMAND", "judgment": "STUDY", "action_code": "OPEN_APP", "action_detail": "백준", "message": "백준 켜드릴게요. 문제 못 풀면 바보 인증인 거 알죠?"}}
 
 2. **Persona Response (Message) Examples**:
    - **Request (Good)**: "뿅~~!!⭐ 주인님, VSCode 대령했습니다~! 아휴, 제가 없으면 아무것도 못하시죠? 😙" (emotion: EXCITE or HEART)
@@ -118,20 +146,26 @@ Logic:
    - **Just the raw JSON string**.
    - **Language**: Respond in **Korean** (한국어).
 
+   ** Single Command **:
    {{
-     "intent": "COMMAND" | "CHAT",
-     "judgment": "STUDY" | "PLAY" | "NEUTRAL",
-     "action_code": "OPEN_APP" | "NONE" | "WRITE_FILE" | "MINIMIZE_APP" | "KILL_APP", 
-     "action_detail": "VSCode" | "League of Legends" | "Topic_Summary.md",
-     "message": "한국어 메스가키 대사...",
-     "emotion": "NORMAL" | "SLEEPING" | "ANGRY" | "EMERGENCY" | "CRY" | "LOVE" | "EXCITE" | "LAUGH" | "SILLY" | "STUNNED" | "PUZZLE" | "HEART"
-
+     "intent": "COMMAND",
+     "judgment": "STUDY", 
+     "action_code": "OPEN_APP", 
+     "action_detail": "Code",
+     "message": "...",
+     "emotion": "NORMAL"
    }}
 
-    * For `WRITE_FILE`: `message` should contain the FULL MARKDOWN CONTENT.
+   ** Multiple Commands (If user asks for A, B, C...) **:
+   [
+     {{ "intent": "COMMAND", "action_code": "OPEN_APP", "action_detail": "Code", "message": "다 켜드릴게요! 한번에 말하니까 편하네요!", "emotion": "EXCITE" }},
+     {{ "intent": "COMMAND", "action_code": "OPEN_APP", "action_detail": "Calendar", "message": ".", "emotion": "NORMAL" }}
+   ]
+
+   * For `WRITE_FILE`: `message` should contain the FULL MARKDOWN CONTENT.
 
 IMPORTANT: DO NOT OUTPUT ANYTHING BEFORE OR AFTER THE JSON.
-START THE RESPONSE WITH '{{' AND END WITH '}}'.
+START THE RESPONSE WITH '{{' OR '[' AND END WITH '}}' OR ']'.
     """
 
 
@@ -140,14 +174,46 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
         response_msg = await llm.ainvoke(final_prompt)
         raw_content = response_msg.content
         
-        # Regex로 JSON 부분만 추출 (가장 바깥쪽 {} 찾기)
+        # Regex로 JSON 부분만 추출 (Object {} OR Array [])
         # re.DOTALL을 써서 개행문자 포함 매칭
-        json_match = re.search(r'(\{.*\})', raw_content, re.DOTALL)
+        # Try finding Array first, then Object
+        json_match = re.search(r'(\[.*\]|\{.*\})', raw_content, re.DOTALL)
         
         if json_match:
             json_str = json_match.group(1)
             data = json.loads(json_str)
-            return ChatResponse(**data)
+            
+            # [Multi-Command Support] Logic
+            final_data = {}
+            multi_actions = None
+
+            if isinstance(data, list):
+                if not data: raise ValueError("Empty JSON Array")
+                # Use the first item as the primary response
+                final_data = data[0]
+                multi_actions = data
+                print(f"DEBUG: Multi-Command Detected: {len(data)} actions")
+            else:
+                final_data = data
+                multi_actions = None
+
+            # [LOGIC INTERCEPTION] GENERATE_NOTE -> WRITE_FILE
+            # (Apply only to main item for now, or loop if needed)
+            if final_data.get("action_code") == "GENERATE_NOTE":
+                topic = final_data.get("action_detail", "Study")
+                print(f"DEBUG: Generating Note for topic: {topic}")
+                
+                # Call Memory Service
+                markdown_content = await memory_service.get_recent_summary_markdown(topic)
+                
+                # Swap Action
+                final_data["action_code"] = "WRITE_FILE"
+                final_data["action_detail"] = f"{topic.replace(' ', '_')}_Summary.md"
+                # Append Markdown to message
+                final_data["message"] = f"{final_data['message']}\n\n{markdown_content}"
+
+            # Create Response with multi_actions
+            return ChatResponse(**final_data, multi_actions=multi_actions)
         else:
             # 매칭 실패 시 원본 로그
             print(f"❌ JSON Parse Failed. Raw: {raw_content}")

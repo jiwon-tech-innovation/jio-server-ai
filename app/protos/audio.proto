@@ -14,6 +14,10 @@ message AudioRequest {
   bytes audio_data = 1;       // VAD로 걸러진 음성 바이너리 (0.5초 단위)
   bool is_final = 2;          // True = "방금 문장 끝났음(침묵 1초 감지)"
   int64 timestamp = 3;        // 로깅용 시간
+  string media_info_json = 4; // 미디어 정보 및 컨텍스트 (JSON)
+  
+  string process_info = 10;   // (추가) 현재 활성 프로세스 정보 (JSON)
+  string windows = 11;        // (추가) 열린 창 목록 정보 (JSON)
 }
 
 message AudioResponse {

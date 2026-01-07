@@ -13,7 +13,8 @@ class InfluxClientWrapper:
             cls._client = InfluxDBClient(
                 url=settings.INFLUXDB_URL,
                 token=settings.INFLUXDB_TOKEN,
-                org=settings.INFLUXDB_ORG
+                org=settings.INFLUXDB_ORG,
+                timeout=2000  # 2 seconds timeout to prevent blocking gRPC
             )
         return cls._client
 

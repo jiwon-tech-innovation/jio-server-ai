@@ -23,18 +23,18 @@ class Settings(BaseSettings):
     PG_DB: str = os.getenv("PG_DB", "jiaa_memory")
 
     # Sensor Fusion (InfluxDB)
-    INFLUXDB_URL: str = os.getenv("INFLUXDB_URL", "http://localhost:8086")
+    INFLUXDB_URL: str = os.getenv("INFLUXDB_URL", "http://influxdb:8086")
     INFLUXDB_ORG: str = os.getenv("INFLUXDB_ORG", "jiaa")
     INFLUXDB_BUCKET: str = os.getenv("INFLUXDB_BUCKET", "sensor_data")
     INFLUXDB_TOKEN: str = os.getenv("INFLUXDB_TOKEN", "my-token")
 
     # Cache (Redis)
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     # Kafka (Message Broker)
-    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka.kafka.svc:9092")
+    KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
     KAFKA_TOPIC_AI_INTENT: str = os.getenv("KAFKA_TOPIC_AI_INTENT", "jiaa.ai.intent")
 
     class Config:

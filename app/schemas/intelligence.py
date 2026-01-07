@@ -61,3 +61,6 @@ class ChatResponse(BaseModel):
     message: str # "오, 드디어..."
     emotion: Optional[str] = "NORMAL" # "NORMAL", "ANGRY", "LOVE", "SILLY", "STUNNED", "CRY", "LAUGH", "PUZZLE"
 
+    # [Multi-Command Support]
+    multi_actions: Optional[List[Dict[str, Any]]] = None
+

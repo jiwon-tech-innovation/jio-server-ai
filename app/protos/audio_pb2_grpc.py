@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from . import audio_pb2 as audio__pb2
+from app.protos import audio_pb2 as app_dot_protos_dot_audio__pb2
 
 
 class AudioServiceStub(object):
@@ -16,8 +16,8 @@ class AudioServiceStub(object):
         """
         self.TranscribeAudio = channel.stream_unary(
                 '/jiaa.audio.AudioService/TranscribeAudio',
-                request_serializer=audio__pb2.AudioRequest.SerializeToString,
-                response_deserializer=audio__pb2.AudioResponse.FromString,
+                request_serializer=app_dot_protos_dot_audio__pb2.AudioRequest.SerializeToString,
+                response_deserializer=app_dot_protos_dot_audio__pb2.AudioResponse.FromString,
                 )
 
 
@@ -36,8 +36,8 @@ def add_AudioServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'TranscribeAudio': grpc.stream_unary_rpc_method_handler(
                     servicer.TranscribeAudio,
-                    request_deserializer=audio__pb2.AudioRequest.FromString,
-                    response_serializer=audio__pb2.AudioResponse.SerializeToString,
+                    request_deserializer=app_dot_protos_dot_audio__pb2.AudioRequest.FromString,
+                    response_serializer=app_dot_protos_dot_audio__pb2.AudioResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -61,7 +61,7 @@ class AudioService(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.stream_unary(request_iterator, target, '/jiaa.audio.AudioService/TranscribeAudio',
-            audio__pb2.AudioRequest.SerializeToString,
-            audio__pb2.AudioResponse.FromString,
+            app_dot_protos_dot_audio__pb2.AudioRequest.SerializeToString,
+            app_dot_protos_dot_audio__pb2.AudioResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
