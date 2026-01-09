@@ -42,7 +42,7 @@ def get_long_term_store():
     For Production: Uses PostgreSQL (PGVector).
     """
     # Toggle this flag to switch backends
-    USE_CHROMA_LTM = True 
+    USE_CHROMA_LTM = False 
 
     if USE_CHROMA_LTM:
         print("INFO: Using ChromaDB for Long-Term Memory (Local Mode).")
