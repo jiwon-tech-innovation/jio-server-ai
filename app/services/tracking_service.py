@@ -1,6 +1,10 @@
 import grpc
 import json
+import re
 from app.protos import tracking_pb2, tracking_pb2_grpc
+from app.core.crypto import decrypt_data_raw
+from app.services.memory_service import memory_service
+from app.core.llm import get_llm, HAIKU_MODEL_ID
 
 class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
     async def SendAppList(self, request, context):
@@ -16,6 +20,7 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
             command = "NONE"
             msg = "OK"
             
+            # 1. Check Apps
             for app in apps:
                 for bad in SERVER_BLACKLIST:
                     if bad.lower() in app.lower():
@@ -27,6 +32,56 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
                 if command == "KILL":
                     break
             
+            # 2. Handle Clipboard & Silence (Nagging)
+            # Only trigger if NO Kill command is active (Priority: Kill > Nag)
+            if command == "NONE" and request.clipboard_payload:
+                try:
+                    # Decrypt Clipboard
+                    clipboard_text = decrypt_data_raw(
+                        request.clipboard_payload,
+                        request.clipboard_key,
+                        request.clipboard_iv,
+                        request.clipboard_tag
+                    )
+                    
+                    # Silence Check (e.g., 30 mins = 30.0)
+                    # For Demo: Use 1 minute (1.0) or even 0.5
+                    silence_min = memory_service.get_silence_duration_minutes()
+                    
+                    if silence_min > 5.0 and len(clipboard_text.strip()) > 10:
+                        print(f"🤐 [Tracking] User Silent for {silence_min:.1f}m. Context: Clipboard")
+                        
+                        # Generate Nag via LLM
+                        llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.7)
+                        prompt = f"""
+                        You are "Alpine" (Tsundere AI). User is master ("주인님").
+                        User has been silent for {int(silence_min)} minutes.
+                        However, they just copied this text to clipboard:
+                        
+                        '''
+                        {clipboard_text}
+                        '''
+                        
+                        If this is Code/Error: Scold them for struggling alone or tease them.
+                        If this is Chat/Text: Ask who they are talking to.
+                        
+                        Keep it short (1 sentence). Start with "주인님,".
+                        Tone: Cheeky/Nagging.
+                        Language: Korean.
+                        """
+                        response = await llm.ainvoke(prompt)
+                        nag_msg = response.content.strip()
+                        
+                        # Override Command to SPEAK (Client must handle this)
+                        command = "SPEAK" 
+                        msg = nag_msg
+                        
+                        # Update interaction time to prevent spamming
+                        memory_service.update_interaction_time()
+                        
+                except Exception as e:
+                    print(f"⚠️ [Tracking] Clipboard Error: {e}")
+
             return tracking_pb2.AppListResponse(
                 success=True,
                 message=msg,

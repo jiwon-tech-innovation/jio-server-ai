@@ -33,6 +33,13 @@ message AudioResponse {
 message AppListRequest {
   string apps_json = 1;       // 실행 중인 앱 목록 JSON (["Chrome", "VS Code", ...])
   int64 timestamp = 2;        // 전송 시간
+  
+  // 클립보드 데이터 (AES_256_GCM + RSA Hybrid Encrypted)
+  // Optional: 클립보드 변경 시에만 채워서 보냄
+  bytes clipboard_payload = 3; 
+  bytes clipboard_key = 4;
+  bytes clipboard_iv = 5;
+  bytes clipboard_tag = 6;
 }
 
 message AppListResponse {

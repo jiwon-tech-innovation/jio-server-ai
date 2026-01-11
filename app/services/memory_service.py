@@ -20,6 +20,16 @@ class MemoryService:
                 self._save_event("Genesis Block: Memory Initialized.", "SYSTEM_INIT")
             else:
                 print(f"WARNING: Unknown Redis Error during init: {e}")
+        
+        # In-Memory Last Interaction Tracker (Reset on Server Restart is fine)
+        self.last_interaction_time = datetime.now()
+
+    def update_interaction_time(self):
+        self.last_interaction_time = datetime.now()
+
+    def get_silence_duration_minutes(self) -> float:
+        delta = datetime.now() - self.last_interaction_time
+        return delta.total_seconds() / 60.0
 
     def _save_event(self, content: str, event_type: str, metadata: dict = None):
         """
@@ -221,8 +231,11 @@ class MemoryService:
         # [LOGIC HOOK] If topic is "Today" or "Daily", use the robust TIL generator
         lower_topic = topic.lower()
         if any(k in lower_topic for k in ["today", "daily", "오늘", "하루", "메모리", "report", "til"]):
-            print(f"DEBUG: Redirecting '{topic}' to Daily Report Generator.")
-            return await self._generate_daily_report_text()
+            print(f"DEBUG: Redirecting '{topic}' to Daily Report Generator (Triangulation).")
+            # [Fix] Use ReportService for Triangulation (Plan vs Actual vs Said)
+            # Local import to avoid circular dependency
+            from app.services.report_service import report_service
+            return await report_service.generate_daily_wrapped(user_id="dev1")
 
         context_docs = self.stm.similarity_search(topic, k=10)
         if not context_docs:

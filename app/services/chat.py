@@ -39,6 +39,9 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     results = await asyncio.gather(get_memory(), get_stats())
     memory_context = results[0]
     stats_result = results[1]
+    
+    # [UPDATE] Reset Silence Timer
+    memory_service.update_interaction_time()
 
     if stats_result:
         stats = stats_result
