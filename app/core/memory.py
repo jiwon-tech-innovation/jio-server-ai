@@ -55,7 +55,7 @@ def get_long_term_store():
 
     # --- PGVector Implementation (Production) ---
     # Connection String: postgresql://user:password@host:port/dbname
-    connection_string = f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DB}"
+    connection_string = f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DB}?sslmode=require"
     
     try:
         from langchain_community.vectorstores import PGVector
