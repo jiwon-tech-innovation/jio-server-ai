@@ -22,11 +22,14 @@ class SystemMetrics(BaseModel):
 
 class ClassifyRequest(BaseModel):
     # Simplified Input (No KPM, No Mouse)
-    process_info: ProcessInfo 
-    windows: List[str] # Background windows list
+    content_type: str = "WINDOW" # URL or WINDOW
+    content: Optional[str] = None # URL string or other content
+    
+    process_info: Optional[ProcessInfo] = None
+    windows: Optional[List[str]] = [] # Background windows list
     media_info: Optional[MediaInfo] = None
     system_metrics: Optional[SystemMetrics] = None
-
+    
 class ClassifyResponse(BaseModel):
     result: str # STUDY, PLAY
     state: str # STUDY, PLAY (Strict State for Client)
