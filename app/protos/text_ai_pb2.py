@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x61pp/protos/text_ai.proto\x12\tjiaa.text\" \n\x0bGoalRequest\x12\x11\n\tgoal_text\x18\x01 \x01(\t\" \n\x0cGoalResponse\x12\x10\n\x08subgoals\x18\x01 \x03(\t2T\n\rTextAIService\x12\x43\n\x10GenerateSubgoals\x12\x16.jiaa.text.GoalRequest\x1a\x17.jiaa.text.GoalResponseB\x11\n\rcom.jiaa.textP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x61pp/protos/text_ai.proto\x12\tjiaa.text\" \n\x0bGoalRequest\x12\x11\n\tgoal_text\x18\x01 \x01(\t\" \n\x0cGoalResponse\x12\x10\n\x08subgoals\x18\x01 \x03(\t\".\n\x0b\x43hatRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x11\n\tclient_id\x18\x02 \x01(\t\"~\n\x0c\x43hatResponse\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\x0e\n\x06intent\x18\x02 \x01(\t\x12\x13\n\x0b\x61\x63tion_code\x18\x03 \x01(\t\x12\x15\n\raction_detail\x18\x04 \x01(\t\x12\x0f\n\x07\x65motion\x18\x05 \x01(\t\x12\x10\n\x08judgment\x18\x06 \x01(\t2\x8d\x01\n\rTextAIService\x12\x43\n\x10GenerateSubgoals\x12\x16.jiaa.text.GoalRequest\x1a\x17.jiaa.text.GoalResponse\x12\x37\n\x04\x43hat\x12\x16.jiaa.text.ChatRequest\x1a\x17.jiaa.text.ChatResponseB\x11\n\rcom.jiaa.textP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,6 +36,10 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GOALREQUEST']._serialized_end=71
   _globals['_GOALRESPONSE']._serialized_start=73
   _globals['_GOALRESPONSE']._serialized_end=105
-  _globals['_TEXTAISERVICE']._serialized_start=107
-  _globals['_TEXTAISERVICE']._serialized_end=191
+  _globals['_CHATREQUEST']._serialized_start=107
+  _globals['_CHATREQUEST']._serialized_end=153
+  _globals['_CHATRESPONSE']._serialized_start=155
+  _globals['_CHATRESPONSE']._serialized_end=281
+  _globals['_TEXTAISERVICE']._serialized_start=284
+  _globals['_TEXTAISERVICE']._serialized_end=425
 # @@protoc_insertion_point(module_scope)

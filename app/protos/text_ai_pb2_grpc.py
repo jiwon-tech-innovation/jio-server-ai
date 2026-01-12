@@ -40,6 +40,11 @@ class TextAIServiceStub(object):
                 request_serializer=app_dot_protos_dot_text__ai__pb2.GoalRequest.SerializeToString,
                 response_deserializer=app_dot_protos_dot_text__ai__pb2.GoalResponse.FromString,
                 _registered_method=True)
+        self.Chat = channel.unary_unary(
+                '/jiaa.text.TextAIService/Chat',
+                request_serializer=app_dot_protos_dot_text__ai__pb2.ChatRequest.SerializeToString,
+                response_deserializer=app_dot_protos_dot_text__ai__pb2.ChatResponse.FromString,
+                _registered_method=True)
 
 
 class TextAIServiceServicer(object):
@@ -53,6 +58,13 @@ class TextAIServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Chat(self, request, context):
+        """Direct Chat with Persona (Text-to-Text)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TextAIServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -60,6 +72,11 @@ def add_TextAIServiceServicer_to_server(servicer, server):
                     servicer.GenerateSubgoals,
                     request_deserializer=app_dot_protos_dot_text__ai__pb2.GoalRequest.FromString,
                     response_serializer=app_dot_protos_dot_text__ai__pb2.GoalResponse.SerializeToString,
+            ),
+            'Chat': grpc.unary_unary_rpc_method_handler(
+                    servicer.Chat,
+                    request_deserializer=app_dot_protos_dot_text__ai__pb2.ChatRequest.FromString,
+                    response_serializer=app_dot_protos_dot_text__ai__pb2.ChatResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -90,6 +107,33 @@ class TextAIService(object):
             '/jiaa.text.TextAIService/GenerateSubgoals',
             app_dot_protos_dot_text__ai__pb2.GoalRequest.SerializeToString,
             app_dot_protos_dot_text__ai__pb2.GoalResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Chat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jiaa.text.TextAIService/Chat',
+            app_dot_protos_dot_text__ai__pb2.ChatRequest.SerializeToString,
+            app_dot_protos_dot_text__ai__pb2.ChatResponse.FromString,
             options,
             channel_credentials,
             insecure,

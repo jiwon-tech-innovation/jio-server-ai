@@ -9,6 +9,9 @@ option java_package = "com.jiaa.text";
 service TextAIService {
   // Break down a complex goal into smaller sub-tasks
   rpc GenerateSubgoals (GoalRequest) returns (GoalResponse);
+  
+  // Direct Chat with Persona (Text-to-Text)
+  rpc Chat (ChatRequest) returns (ChatResponse);
 }
 
 message GoalRequest {
@@ -17,4 +20,18 @@ message GoalRequest {
 
 message GoalResponse {
   repeated string subgoals = 1; // e.g. ["Setup React", "Configure Node.js"]
+}
+
+message ChatRequest {
+  string text = 1;      // e.g. "주인님이 핸드폰을 보고 계십니다"
+  string client_id = 2; // Optional
+}
+
+message ChatResponse {
+  string message = 1;          // AI Response text
+  string intent = 2;           // COMMAND, CHAT...
+  string action_code = 3;      // OPEN_APP, KILL_APP...
+  string action_detail = 4;    // Target
+  string emotion = 5;          // Emotion Tag
+  string judgment = 6;         // STUDY, PLAY, NEUTRAL
 }
