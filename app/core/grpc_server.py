@@ -14,6 +14,9 @@ from app.services import stt, classifier, chat
 from app.schemas.intelligence import ClassifyRequest, ChatRequest, SolveRequest
 from app.core.kafka import kafka_producer
 from app.core.config import get_settings
+from grpc_health.v1 import health
+from grpc_health.v1 import health_pb2
+from grpc_health.v1 import health_pb2_grpc
 
 settings = get_settings()
 
@@ -388,6 +391,21 @@ async def serve_grpc():
         rpc_method_handlers
     )
     server.add_generic_rpc_handlers((generic_handler,))
+    
+    # 5. [CRITICAL] Standard Health Check Service for AWS ALB
+    health_servicer = health.HealthServicer(
+        experimental_non_blocking=True,
+        experimental_thread_pool=None
+    )
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    
+    # Mark all services as SERVING
+    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.IntelligenceService", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.AudioService", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.tracking.TrackingService", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.text_ai.TextAIService", health_pb2.HealthCheckResponse.SERVING)
+
     
     # 서버 시작
     server.add_insecure_port('[::]:50051')

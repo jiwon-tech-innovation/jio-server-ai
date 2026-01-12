@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     AWS_S3_REGION: str = os.getenv("AWS_S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
 
     # Long-Term Memory (PostgreSQL)
-    PG_HOST: str = os.getenv("PG_HOST", "localhost")
-    PG_PORT: str = os.getenv("PG_PORT", "5432")
-    PG_USER: str = os.getenv("PG_USER", "postgres")
-    PG_PASSWORD: str = os.getenv("PG_PASSWORD", "password")
-    PG_DB: str = os.getenv("PG_DB", "jiaa_memory")
+    PG_HOST: str = os.getenv("PG_HOST", os.getenv("pg_host", "localhost"))
+    PG_PORT: str = os.getenv("PG_PORT", os.getenv("pg_port", "5432"))
+    PG_USER: str = os.getenv("PG_USER", os.getenv("pg_user", "postgres"))
+    PG_PASSWORD: str = os.getenv("PG_PASSWORD", os.getenv("pg_password", "password"))
+    PG_DB: str = os.getenv("PG_DB", os.getenv("pg_db", "jiaa_memory"))
 
     # Sensor Fusion (InfluxDB)
     INFLUXDB_URL: str = os.getenv("INFLUXDB_URL", "http://influxdb:8086")
