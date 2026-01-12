@@ -359,6 +359,22 @@ async def serve_grpc():
             print(f"✅ [Planner] Result: {subgoals}")
             return text_ai_pb2.GoalResponse(subgoals=subgoals)
 
+        async def Chat(self, request, context):
+            print(f"💬 [TextAI] Chat Request from {request.client_id}: {request.text}")
+            from app.schemas.intelligence import ChatRequest as SchemaChatRequest
+            
+            chat_req = SchemaChatRequest(text=request.text)
+            chat_res = await chat.chat_with_persona(chat_req)
+            
+            return text_ai_pb2.ChatResponse(
+                message=chat_res.message,
+                intent=chat_res.intent,
+                action_code=chat_res.action_code,
+                action_detail=chat_res.action_detail or "",
+                emotion=chat_res.emotion or "NORMAL",
+                judgment=chat_res.judgment
+            )
+
     text_ai_servicer = TextAIService()
     
     # Register purely via add_TextAIServiceServicer_to_server if using standard flow
