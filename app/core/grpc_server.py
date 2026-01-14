@@ -8,6 +8,9 @@ Services:
 import grpc
 import grpc.aio
 import json
+from grpc_health.v1 import health
+from grpc_health.v1 import health_pb2
+from grpc_health.v1 import health_pb2_grpc
 
 from app.protos import audio_pb2, audio_pb2_grpc
 from app.services import stt, classifier, chat
@@ -76,8 +79,29 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             )
 
         # 2. Chat (Tsundere Response)
-        chat_request = ChatRequest(text=user_text)
-        # TODO: Pass context to Chat if supported
+        # Pass running apps context if available for game detection
+        user_text_with_context = user_text
+        running_apps_list = []
+        if final_media_info.get("windows"):
+            try:
+                windows = final_media_info["windows"]
+                if isinstance(windows, list) and len(windows) > 0:
+                    # Extract app names (remove browser titles like "Google Chrome - [title]")
+                    running_apps_list = []
+                    for app in windows[:20]:  # Limit to first 20 apps
+                        # Remove browser title suffixes
+                        app_name = app.split(" - ")[0].strip()
+                        if app_name and app_name not in running_apps_list:
+                            running_apps_list.append(app_name)
+                    
+                    # Add context about running apps to help identify games
+                    apps_context = ", ".join(running_apps_list)
+                    user_text_with_context = f"{user_text} [현재 실행 중인 앱: {apps_context}]"
+                    print(f"📱 [Context] Running apps ({len(running_apps_list)}): {apps_context[:100]}...")
+            except Exception as e:
+                print(f"⚠️ [Context] Failed to parse windows: {e}")
+        
+        chat_request = ChatRequest(text=user_text_with_context)
         chat_response = await chat.chat_with_persona(chat_request)
 
         # 3. Construct JSON Intent (스키마에 맞게 매핑)
@@ -319,6 +343,18 @@ async def serve_grpc():
     
     # 2. IntelligenceService 등록
     intelligence_servicer = IntelligenceService()
+    
+    # 2-1. Health Service 등록 (AWS ALB Support)
+    health_servicer = health.HealthServicer(
+        experimental_non_blocking=True,
+        experimental_thread_pool=grpc.futures.ThreadPoolExecutor(max_workers=1)
+    )
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    
+    # Set Serving Status
+    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.IntelligenceService", health_pb2.HealthCheckResponse.SERVING)
+    print("✅ [gRPC] Health Service Registered (ALB Ready)")
     
     # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이)
     from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler
