@@ -3,6 +3,10 @@ from app.core.memory import get_vector_store, get_long_term_store
 from langchain_core.documents import Document
 from app.core.llm import get_llm, HAIKU_MODEL_ID
 from langchain_core.prompts import PromptTemplate
+from app.core.config import get_settings
+from langchain_community.vectorstores import Redis
+
+settings = get_settings()
 
 class MemoryService:
     def __init__(self):
@@ -49,6 +53,8 @@ class MemoryService:
             event_type="VIOLATION",
             metadata={"source": source, "category": "PLAY"}
         )
+        # [TRUST SCORE] Slacking reduces trust
+        self.update_trust_score("dev1", -5)
 
     def save_achievement(self, content: str):
         self._save_event(
@@ -56,6 +62,50 @@ class MemoryService:
             event_type="ACHIEVEMENT",
             metadata={"category": "STUDY"}
         )
+        # [TRUST SCORE] Studying increases trust
+        self.update_trust_score("dev1", 2)
+
+    def get_trust_score(self, user_id: str = "dev1") -> int:
+        """
+        Retrieves the persistent Trust Score from Redis.
+        Default: 100 (Max Trust).
+        """
+        try:
+            key = f"user:{user_id}:trust_score"
+            # Direct Redis access from the vector store instance (a bit hacky but works for langchain Redis wrapper)
+            # Actually, standard LangChain Redis vectorstore doesn't expose .client publicly always.
+            # But we can use the same connection logic or just strict redis client.
+            # Let's use the internal client if accessible, or `get_settings` to make a new lightweight connection.
+            # Simpler: Use the `self.stm.client` if available (LangChain Redis usually has it).
+            
+            # Safe Fallback: Check if client exists
+            if hasattr(self.stm, 'client'):
+                val = self.stm.client.get(key)
+                if val is None:
+                    return 100
+                return int(val)
+            else:
+                print("WARNING: Redis client not accessible on STM. Returning default 100.")
+                return 100
+        except Exception as e:
+            print(f"Trust Score Get Error: {e}")
+            return 100
+
+    def update_trust_score(self, user_id: str, delta: int):
+        """
+        Updates the Trust Score. Clamped between 0 and 100.
+        """
+        try:
+            current = self.get_trust_score(user_id)
+            new_score = max(0, min(100, current + delta))
+            
+            key = f"user:{user_id}:trust_score"
+            if hasattr(self.stm, 'client'):
+                self.stm.client.set(key, new_score)
+                print(f"📉 [Trust] Score Updated: {current} -> {new_score} (Delta: {delta})")
+            
+        except Exception as e:
+            print(f"Trust Score Update Error: {e}")
     
     def get_user_context(self, query: str) -> str:
         """
@@ -204,8 +254,16 @@ class MemoryService:
             print("ERROR: LTM (Postgres) is not available. Skipping consolidation.")
             return
 
+        print("🔄 [Memory] Starting Daily Consolidation...")
         summary_text = await self._generate_daily_report_text()
-        print(f"DEBUG: Daily Summary: {summary_text}")
+        
+        # [ARCHITECTURAL ALIGNMENT]
+        # Redis is volatile/short-term. PGVector is permanent.
+        # We must log the final "Trust Score" of the day to LTM so it persists in history.
+        current_trust = self.get_trust_score()
+        summary_text += f"\n\n**End-of-Day Trust Score**: {current_trust}/100"
+        
+        print(f"✅ [Memory] Daily Summary Generated:\n{summary_text}")
 
         # 3. Save to LTM
         try:
@@ -213,13 +271,25 @@ class MemoryService:
                 [summary_text], 
                 metadatas=[{"event_type": "DAILY_SUMMARY", "date": datetime.now().strftime("%Y-%m-%d")}]
             )
-            print("DEBUG: Saved summary to LTM.")
+            print("✅ [Memory] Saved summary to LTM (PGVector).")
             
-            # 4. Flush STM (In Chroma file mode, difficult to delete all without ID)
-            # For now, we assume 'reset' or just keep appending until file rotation.
-            # Ideally: self.stm.delete_collection() -> re-init
-            print("WARNING: STM flush not fully implemented for Chroma (File Mode).")
-            
+            try:
+                # Construct Redis URL safely
+                redis_password = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+                redis_url = f"redis://{redis_password}{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+                
+                # Drop Index using Class Method or Instance wrapper
+                # LangChain Redis.drop_index is a static/class method
+                Redis.drop_index(index_name="jiaa_memory", delete_documents=True, redis_url=redis_url)
+                print("✅ [Memory] STM (Redis) Flushed.")
+                
+                # Re-init index immediately
+                self.stm = get_vector_store()
+                self._save_event("Genesis Block: Memory Consolidate & Reset.", "SYSTEM_RESET")
+                
+            except Exception as e:
+                 print(f"WARNING: STM Flush failed (Manual deletion might be required): {e}")
+
         except Exception as e:
             print(f"ERROR: Consolidation Failed: {e}")
 

@@ -1,7 +1,7 @@
 import boto3
 import os
 from langchain_aws import BedrockEmbeddings
-from langchain_community.vectorstores import Redis, Chroma
+from langchain_community.vectorstores import Redis
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -37,22 +37,8 @@ def get_vector_store():
 
 def get_long_term_store():
     """
-    Returns the Persistent Long-Term Memory (LTM).
-    For Local Testing: Uses ChromaDB.
-    For Production: Uses PostgreSQL (PGVector).
+    Returns the Persistent Long-Term Memory (LTM) using PGVector.
     """
-    # Toggle this flag to switch backends
-    USE_CHROMA_LTM = False 
-
-    if USE_CHROMA_LTM:
-        print("INFO: Using ChromaDB for Long-Term Memory (Local Mode).")
-        persist_directory = os.path.join(os.getcwd(), "chroma_ltm_db")
-        return Chroma(
-            collection_name="jiaa_long_term_memory",
-            embedding_function=get_embeddings(),
-            persist_directory=persist_directory
-        )
-
     # --- PGVector Implementation (Production) ---
     # Connection String: postgresql://user:password@host:port/dbname
     connection_string = f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DB}?sslmode=require"

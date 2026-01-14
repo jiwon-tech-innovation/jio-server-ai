@@ -32,6 +32,11 @@ app = FastAPI(
 async def root():
     return {"message": "JIAA Intelligence Worker is running"}
 
+@app.get("/health")
+async def health_check():
+    """ALB Health Check endpoint (HTTP/1.1 compatible)"""
+    return {"status": "healthy"}
+
 from app.api.v1.api import api_router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

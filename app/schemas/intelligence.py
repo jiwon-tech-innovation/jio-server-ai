@@ -55,6 +55,7 @@ class STTResponse(BaseModel):
 # Chat
 class ChatRequest(BaseModel):
     text: str
+    user_id: Optional[str] = "dev1"
 
 class ChatResponse(BaseModel):
     intent: str # COMMAND, CHAT

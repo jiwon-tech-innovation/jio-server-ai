@@ -79,6 +79,10 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             )
 
         # 2. Chat (Tsundere Response)
+        # Extract user_id from accumulated media_info or default to dev1
+        user_id = final_media_info.get("user_id", "dev1")
+        print(f"👤 [Audio] Chatting as User: {user_id}")
+
         # Pass running apps context if available for game detection
         user_text_with_context = user_text
         running_apps_list = []
@@ -101,7 +105,7 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             except Exception as e:
                 print(f"⚠️ [Context] Failed to parse windows: {e}")
         
-        chat_request = ChatRequest(text=user_text_with_context)
+        chat_request = ChatRequest(text=user_text_with_context, user_id=user_id)
         chat_response = await chat.chat_with_persona(chat_request)
 
         # 3. Construct JSON Intent (스키마에 맞게 매핑)
@@ -402,7 +406,7 @@ async def serve_grpc():
             print(f"💬 [TextAI] Chat Request from {request.client_id}: {request.text}")
             from app.schemas.intelligence import ChatRequest as SchemaChatRequest
             
-            chat_req = SchemaChatRequest(text=request.text)
+            chat_req = SchemaChatRequest(text=request.text, user_id=request.client_id)
             chat_res = await chat.chat_with_persona(chat_req)
             
             return text_ai_pb2.ChatResponse(
