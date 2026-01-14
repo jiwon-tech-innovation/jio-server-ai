@@ -20,7 +20,9 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
             command = "NONE"
             msg = "OK"
             
-            # 1. Check Apps
+            # 1. Check Apps (Hybrid: Blacklist -> AI)
+            
+            # 1-1. Fast Blacklist Check
             for app in apps:
                 for bad in SERVER_BLACKLIST:
                     if bad.lower() in app.lower():
@@ -31,6 +33,26 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer):
                         break
                 if command == "KILL":
                     break
+            
+            # 1-2. AI Detection (Claude 3.5 Haiku) - If not already killed
+            if command == "NONE":
+                try:
+                    from app.services import game_detector
+                    from app.schemas.game import GameDetectRequest
+                    
+                    # AI Detect
+                    detect_req = GameDetectRequest(apps=apps)
+                    ai_result = await game_detector.detect_games(detect_req)
+                    
+                    if ai_result.is_game_detected:
+                        # AI가 게임으로 판단함
+                        kill_target = ai_result.target_app
+                        command = "KILL"
+                        msg = ai_result.message or f"AI 감지: {kill_target} 실행이 확인되었습니다."
+                        print(f"🤖 [Tracking] AI DETECTED GAME: {kill_target} (Conf: {ai_result.confidence})")
+                except Exception as e:
+                    print(f"⚠️ [Tracking] AI Detection Error: {e}")
+
             
             # 2. Handle Clipboard & Silence (Nagging)
             # Only trigger if NO Kill command is active (Priority: Kill > Nag)
