@@ -2,7 +2,7 @@ import asyncio
 from app.services import planner
 
 async def test_planner():
-    goal = "Create a React-based TODO app with Firebase backend"
+    goal = "리액트 기반의 투두 앱을 만들고 파이어베이스와 연동해줘"
     print(f"🎯 Testing Goal: {goal}")
     
     subgoals = await planner.generate_subgoals(goal)
