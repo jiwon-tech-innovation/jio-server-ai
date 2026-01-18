@@ -320,18 +320,25 @@ async def serve_grpc():
     # 2. IntelligenceService 등록
     intelligence_servicer = IntelligenceService()
     
-    # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이)
+    # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이 -> protobuf 필수)
+    from app.protos import intelligence_pb2
     from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler
     
     rpc_method_handlers = {
         'AnalyzeLog': unary_unary_rpc_method_handler(
             intelligence_servicer.AnalyzeLog,
+            request_deserializer=intelligence_pb2.LogAnalysisRequest.FromString,
+            response_serializer=intelligence_pb2.LogAnalysisResponse.SerializeToString,
         ),
         'ClassifyURL': unary_unary_rpc_method_handler(
             intelligence_servicer.ClassifyURL,
+            request_deserializer=intelligence_pb2.URLClassifyRequest.FromString,
+            response_serializer=intelligence_pb2.URLClassifyResponse.SerializeToString,
         ),
         'TranscribeAudio': stream_unary_rpc_method_handler(
             intelligence_servicer.TranscribeAudio,
+            request_deserializer=intelligence_pb2.AudioChunk.FromString,
+            response_serializer=intelligence_pb2.TranscribeResponse.SerializeToString,
         ),
     }
 
