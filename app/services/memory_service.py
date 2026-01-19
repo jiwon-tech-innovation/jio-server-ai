@@ -1,7 +1,7 @@
 from datetime import datetime
 from app.core.memory import get_vector_store, get_long_term_store
 from langchain_core.documents import Document
-from app.core.llm import get_llm, HAIKU_MODEL_ID
+from app.core.llm import get_llm, HAIKU_MODEL_ID, SONNET_MODEL_ID
 from langchain_core.prompts import PromptTemplate
 from app.core.config import get_settings
 from langchain_community.vectorstores import Redis
@@ -48,25 +48,25 @@ class MemoryService:
         self.stm.add_documents([doc])
         print(f"DEBUG: STM Saved [{event_type}] {content}")
 
-    def save_violation(self, content: str, source: str = "Unknown"):
+    def save_violation(self, content: str, source: str = "Unknown", user_id: str = "dev1"):
         self._save_event(
             content=f"User was caught playing/slacking: {content}",
             event_type="VIOLATION",
-            metadata={"source": source, "category": "PLAY"}
+            metadata={"source": source, "category": "PLAY", "user_id": user_id}
         )
         # [TRUST SCORE] Slacking reduces trust
-        self.update_trust_score("dev1", -5)
+        self.update_trust_score(user_id, -5)
 
-    def save_achievement(self, content: str):
+    def save_achievement(self, content: str, user_id: str = "dev1"):
         self._save_event(
             content=f"User was studying: {content}",
             event_type="ACHIEVEMENT",
-            metadata={"category": "STUDY"}
+            metadata={"category": "STUDY", "user_id": user_id}
         )
         # [TRUST SCORE] Studying increases trust
-        self.update_trust_score("dev1", 2)
+        self.update_trust_score(user_id, 2)
 
-    def save_quiz_result(self, topic: str, score: int, max_score: int):
+    def save_quiz_result(self, topic: str, score: int, max_score: int, user_id: str = "dev1"):
         """
         Saves quiz performance to STM.
         """
@@ -75,13 +75,13 @@ class MemoryService:
         self._save_event(
             content=content,
             event_type="QUIZ",
-            metadata={"topic": topic, "score": score, "max_score": max_score, "category": "STUDY"}
+            metadata={"topic": topic, "score": score, "max_score": max_score, "category": "STUDY", "user_id": user_id}
         )
         # [TRUST SCORE] High score boosts trust significantly
         if percent >= 80:
-            self.update_trust_score("dev1", 5)
+            self.update_trust_score(user_id, 5)
         elif percent < 50:
-             self.update_trust_score("dev1", -2) # Penalty for poor performance despite "studying"
+             self.update_trust_score(user_id, -2) # Penalty for poor performance despite "studying"
 
     def _get_redis_client(self):
         # Helper to get a direct Redis client
@@ -239,13 +239,11 @@ class MemoryService:
             print("ERROR: LTM (Postgres) is not available. Skipping consolidation.")
             return
 
-    async def _generate_daily_report_text(self) -> str:
+    async def _generate_daily_report_text(self, user_id: str = "dev1") -> str:
         """
         Internal helper: Generates the 'Daily TIL' report string using broad search & LLM.
         Refactored for Data Trinity: Uses InfluxDB for Ground Truth.
         """
-        user_id = "user" # TODO: Pass dynamic user_id if needed, currently single user mostly
-        
         # 1. Fetch Ground Truth from InfluxDB (Activity Timeline)
         timeline = await statistic_service.get_daily_timeline(user_id)
         timeline_text = "\n".join(timeline) if timeline else "No activity recorded in InfluxDB."
@@ -311,7 +309,7 @@ class MemoryService:
         summary = await llm.ainvoke(prompt)
         return summary.content
 
-    async def consolidate_memory(self):
+    async def consolidate_memory(self, user_id: str = "dev1"):
         """
         [Sleep Routine]
         1. Generates Daily Report.
@@ -323,12 +321,12 @@ class MemoryService:
             return
 
         print("🔄 [Memory] Starting Daily Consolidation...")
-        summary_text = await self._generate_daily_report_text()
+        summary_text = await self._generate_daily_report_text(user_id=user_id)
         
         # [ARCHITECTURAL ALIGNMENT]
         # Redis is volatile/short-term. PGVector is permanent.
         # We must log the final "Trust Score" of the day to LTM so it persists in history.
-        current_trust = self.get_trust_score()
+        current_trust = self.get_trust_score(user_id)
         summary_text += f"\n\n**End-of-Day Trust Score**: {current_trust}/100"
         
         print(f"✅ [Memory] Daily Summary Generated:\n{summary_text}")
@@ -337,7 +335,7 @@ class MemoryService:
         try:
             self.ltm.add_texts(
                 [summary_text], 
-                metadatas=[{"event_type": "DAILY_SUMMARY", "date": datetime.now().strftime("%Y-%m-%d")}]
+                metadatas=[{"event_type": "DAILY_SUMMARY", "date": datetime.now().strftime("%Y-%m-%d"), "user_id": user_id}]
             )
             print("✅ [Memory] Saved summary to LTM (PGVector).")
             
@@ -361,19 +359,20 @@ class MemoryService:
         except Exception as e:
             print(f"ERROR: Consolidation Failed: {e}")
 
-    async def get_recent_summary_markdown(self, topic: str) -> str:
+    async def get_recent_summary_markdown(self, topic: str, user_id: str = "dev1") -> str:
         """
         Generates a Markdown summary for a specific topic based on recent memories.
         Used for 'Smart Note' feature.
         """
         # [LOGIC HOOK] If topic is "Today" or "Daily", use the robust TIL generator
         lower_topic = topic.lower()
-        if any(k in lower_topic for k in ["today", "daily", "오늘", "하루", "메모리", "report", "til"]):
+        if any(k in lower_topic for k in ["today", "daily", "오늘", "하루", "메모리", "report", "til", "퀴즈", "quiz", "summary"]):
             print(f"DEBUG: Redirecting '{topic}' to Daily Report Generator (Triangulation).")
             # [Fix] Use ReportService for Triangulation (Plan vs Actual vs Said)
             # Local import to avoid circular dependency
             from app.services.report_service import report_service
-            return await report_service.generate_daily_wrapped(user_id="dev1")
+            # Forward user_id to ReportService (Fixed)
+            return await report_service.generate_daily_wrapped(user_id=user_id)
 
         context_docs = self.stm.similarity_search(topic, k=10)
         if not context_docs:
@@ -381,7 +380,8 @@ class MemoryService:
         
         context_text = "\n".join([f"- {d.page_content}" for d in context_docs])
         
-        llm = get_llm(model_id=HAIKU_MODEL_ID)
+        # [User Request] Ensure writing tasks use Sonnet (High Intelligence)
+        llm = get_llm(model_id=SONNET_MODEL_ID, temperature=0.7)
         prompt = f"""
         You are a helpful technical assistant.
         Write a clean, structured Markdown note about the topic: "{topic}".

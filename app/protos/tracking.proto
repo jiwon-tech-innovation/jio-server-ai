@@ -6,8 +6,8 @@ option java_multiple_files = true;
 option java_package = "com.jiaa.common.tracking";
 
 service TrackingService {
-  // 음성 스트리밍 -> STT 변환
-  rpc TranscribeAudio(stream AudioRequest) returns (AudioResponse);
+  // 음성 스트리밍 -> STT 변환 (Bidirectional Streaming for Highway AI)
+  rpc TranscribeAudio(stream AudioRequest) returns (stream AudioResponse);
   
   // 실행 중인 앱 목록 전송 (변경 시에만)
   rpc SendAppList(AppListRequest) returns (AppListResponse);
@@ -23,9 +23,15 @@ message AudioRequest {
 }
 
 message AudioResponse {
-  string transcript = 1;      // 변환된 텍스트
+  string transcript = 1;      // 변환된 텍스트 (STT 결과 또는 AI 응답 청크)
   bool is_emergency = 2;      // 위급 상황 여부
-  string intent = 3;          // 의도 분석 결과
+  string intent = 3;          // 의도 분석 결과 (JSON) - 마지막 청크에만 포함
+  
+  // [Highway AI] Streaming 전용 필드
+  bool is_partial = 4;        // True = 스트리밍 중간 청크 (TTS 재생용 텍스트)
+  bool is_complete = 5;       // True = 마지막 청크 (intent JSON 포함)
+  string text_chunk = 6;      // AI 응답 텍스트 조각 (TTS용)
+  string emotion = 7;         // 감정 태그 (NORMAL, ANGRY, etc.)
 }
 
 // ==================== App List ====================

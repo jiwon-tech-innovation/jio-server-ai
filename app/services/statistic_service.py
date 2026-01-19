@@ -24,7 +24,7 @@ class StatisticService:
             flux_query = f'''
             from(bucket: "{bucket}")
               |> range(start: -{days}d)
-              |> filter(fn: (r) => r["_measurement"] == "user_activity")
+              |> filter(fn: (r) => r["_measurement"] == "user_activity_v2")
               |> filter(fn: (r) => r["user_id"] == "{user_id}")
               |> filter(fn: (r) => r["_field"] == "duration_min")
               |> group(columns: ["category"])
@@ -62,7 +62,7 @@ class StatisticService:
             viol_query = f'''
             from(bucket: "{bucket}")
               |> range(start: -{days}d)
-              |> filter(fn: (r) => r["_measurement"] == "user_activity")
+              |> filter(fn: (r) => r["_measurement"] == "user_activity_v2")
               |> filter(fn: (r) => r["user_id"] == "{user_id}")
               |> filter(fn: (r) => r["category"] == "PLAY")
               |> filter(fn: (r) => r["_field"] == "action_detail")
@@ -108,7 +108,7 @@ class StatisticService:
             flux_query = f'''
             from(bucket: "{bucket}")
               |> range(start: -24h)
-              |> filter(fn: (r) => r["_measurement"] == "user_activity")
+              |> filter(fn: (r) => r["_measurement"] == "user_activity_v2")
               |> filter(fn: (r) => r["user_id"] == "{user_id}")
               |> filter(fn: (r) => r["_field"] == "action_detail")
               |> sort(columns: ["_time"], desc: false)
@@ -151,7 +151,7 @@ class StatisticService:
             flux_query = f'''
             from(bucket: "{bucket}")
               |> range(start: -24h)
-              |> filter(fn: (r) => r["_measurement"] == "user_activity")
+              |> filter(fn: (r) => r["_measurement"] == "user_activity_v2")
               |> filter(fn: (r) => r["user_id"] == "{user_id}")
               |> filter(fn: (r) => r["type"] == "QUIZ")
               |> filter(fn: (r) => r["_field"] == "score" or r["_field"] == "action_detail" or r["_field"] == "wrong_answers")

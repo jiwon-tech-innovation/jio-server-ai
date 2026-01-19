@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from app.protos import tracking_pb2 as app_dot_protos_dot_tracking__pb2
+from . import tracking_pb2 as tracking__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in app/protos/tracking_pb2_grpc.py depends on'
+        + ' but the generated code in tracking_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -34,15 +34,15 @@ class TrackingServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.TranscribeAudio = channel.stream_unary(
+        self.TranscribeAudio = channel.stream_stream(
                 '/jiaa.tracking.TrackingService/TranscribeAudio',
-                request_serializer=app_dot_protos_dot_tracking__pb2.AudioRequest.SerializeToString,
-                response_deserializer=app_dot_protos_dot_tracking__pb2.AudioResponse.FromString,
+                request_serializer=tracking__pb2.AudioRequest.SerializeToString,
+                response_deserializer=tracking__pb2.AudioResponse.FromString,
                 _registered_method=True)
         self.SendAppList = channel.unary_unary(
                 '/jiaa.tracking.TrackingService/SendAppList',
-                request_serializer=app_dot_protos_dot_tracking__pb2.AppListRequest.SerializeToString,
-                response_deserializer=app_dot_protos_dot_tracking__pb2.AppListResponse.FromString,
+                request_serializer=tracking__pb2.AppListRequest.SerializeToString,
+                response_deserializer=tracking__pb2.AppListResponse.FromString,
                 _registered_method=True)
 
 
@@ -50,7 +50,7 @@ class TrackingServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def TranscribeAudio(self, request_iterator, context):
-        """음성 스트리밍 -> STT 변환
+        """음성 스트리밍 -> STT 변환 (Bidirectional Streaming for Highway AI)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -66,15 +66,15 @@ class TrackingServiceServicer(object):
 
 def add_TrackingServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'TranscribeAudio': grpc.stream_unary_rpc_method_handler(
+            'TranscribeAudio': grpc.stream_stream_rpc_method_handler(
                     servicer.TranscribeAudio,
-                    request_deserializer=app_dot_protos_dot_tracking__pb2.AudioRequest.FromString,
-                    response_serializer=app_dot_protos_dot_tracking__pb2.AudioResponse.SerializeToString,
+                    request_deserializer=tracking__pb2.AudioRequest.FromString,
+                    response_serializer=tracking__pb2.AudioResponse.SerializeToString,
             ),
             'SendAppList': grpc.unary_unary_rpc_method_handler(
                     servicer.SendAppList,
-                    request_deserializer=app_dot_protos_dot_tracking__pb2.AppListRequest.FromString,
-                    response_serializer=app_dot_protos_dot_tracking__pb2.AppListResponse.SerializeToString,
+                    request_deserializer=tracking__pb2.AppListRequest.FromString,
+                    response_serializer=tracking__pb2.AppListResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -98,12 +98,12 @@ class TrackingService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.stream_unary(
+        return grpc.experimental.stream_stream(
             request_iterator,
             target,
             '/jiaa.tracking.TrackingService/TranscribeAudio',
-            app_dot_protos_dot_tracking__pb2.AudioRequest.SerializeToString,
-            app_dot_protos_dot_tracking__pb2.AudioResponse.FromString,
+            tracking__pb2.AudioRequest.SerializeToString,
+            tracking__pb2.AudioResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -129,8 +129,8 @@ class TrackingService(object):
             request,
             target,
             '/jiaa.tracking.TrackingService/SendAppList',
-            app_dot_protos_dot_tracking__pb2.AppListRequest.SerializeToString,
-            app_dot_protos_dot_tracking__pb2.AppListResponse.FromString,
+            tracking__pb2.AppListRequest.SerializeToString,
+            tracking__pb2.AppListResponse.FromString,
             options,
             channel_credentials,
             insecure,

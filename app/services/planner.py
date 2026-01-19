@@ -4,6 +4,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from app.core.llm import get_llm, SONNET_MODEL_ID
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # --- Subgoal Schemas ---
 class GoalList(BaseModel):
@@ -61,10 +62,15 @@ async def generate_subgoals(goal: str) -> List[str]:
         print(f"Planner Error: {e}")
         return [f"계획 생성 실패: {str(e)}"]
 
-async def generate_quiz(topic: str, difficulty: str = "Medium") -> List[dict]:
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True
+)
+async def _generate_quiz_safe(topic: str, difficulty: str) -> List[dict]:
     """
-    Generates a technical quiz based on the topic using Claude 3.5 Sonnet.
-    Returns raw dict list for easy usage.
+    Internal safe generation with retries.
     """
     llm = get_llm(model_id=SONNET_MODEL_ID, temperature=0.5)
     parser = PydanticOutputParser(pydantic_object=QuizResponse)
@@ -90,14 +96,22 @@ async def generate_quiz(topic: str, difficulty: str = "Medium") -> List[dict]:
     
     chain = prompt | llm | parser
     
+    print(f"🧠 [Quiz] Sonnet Generating Quiz for: {topic} ({difficulty})")
+    result = await chain.ainvoke({"topic": topic, "difficulty": difficulty})
+    
+    # Convert Pydantic models to list of dicts
+    return [q.dict() for q in result.quizzes]
+
+
+async def generate_quiz(topic: str, difficulty: str = "Medium") -> List[dict]:
+    """
+    Generates a technical quiz based on the topic using Claude 3.5 Sonnet.
+    Returns raw dict list for easy usage.
+    Wrapper handles final exceptions after retries.
+    """
     try:
-        print(f"🧠 [Quiz] Sonnet Generating Quiz for: {topic} ({difficulty})")
-        result = await chain.ainvoke({"topic": topic, "difficulty": difficulty})
-        
-        # Convert Pydantic models to list of dicts
-        return [q.dict() for q in result.quizzes]
-        
+        return await _generate_quiz_safe(topic, difficulty)
     except Exception as e:
-        print(f"Quiz Error: {e}")
+        print(f"❌ [Quiz] Fatal Generation Error after retries: {e}")
         return []
 

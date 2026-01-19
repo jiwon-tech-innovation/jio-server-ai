@@ -7,9 +7,152 @@ from app.services import game_detector
 import re
 import json
 import asyncio
+from typing import AsyncGenerator, Tuple
 
 
 from app.services.statistic_service import statistic_service
+
+
+# =============================================================================
+# [Highway AI] Streaming Chat Implementation
+# =============================================================================
+
+async def chat_with_persona_stream(request: ChatRequest) -> AsyncGenerator[Tuple[str, bool, dict], None]:
+    """
+    Streaming version of chat_with_persona.
+    Yields (text_chunk, is_complete, metadata) tuples.
+    
+    - is_complete=False: Partial text for TTS playback
+    - is_complete=True: Final chunk with full intent/command JSON
+    
+    Protocol: "Text First, JSON Last"
+    LLM outputs: "네, 알겠습니다 주인님! [SEP] {json_data}"
+    """
+    import time
+    
+    llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.1)
+    
+    # Get context (simplified, non-blocking with very short timeout)
+    memory_context = ""
+    trust_score = 50  # Default mid-trust
+    
+    try:
+        # Quick context fetch (300ms timeout for streaming responsiveness)
+        async def quick_memory():
+            return memory_service.get_user_context(request.text)
+        
+        memory_context = await asyncio.wait_for(quick_memory(), timeout=0.3)
+        trust_score = memory_service.get_trust_score(request.user_id)
+    except Exception:
+        pass  # Use defaults if timeout
+    
+    # Determine persona based on trust
+    if trust_score >= 70:
+        persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
+    elif trust_score >= 40:
+        persona_instruction = "TSUNDERE mode: Pretend to be annoyed but secretly care."
+    else:
+        persona_instruction = "STRICT mode: Be a firm disciplinarian. Refuse play requests."
+    
+    # Streaming-optimized prompt (Text first, JSON last)
+    streaming_prompt = f"""You are "Alpine" (알파인), a high-performance AI study assistant.
+Your user is "{request.user_id}" whom you address as "주인님" (Master).
+
+{persona_instruction}
+
+CRITICAL OUTPUT FORMAT FOR STREAMING:
+1. First, output your spoken response text (Korean) naturally.
+2. Then output the separator: [INTENT]
+3. Finally, output the JSON command data.
+
+Example output:
+네, 알겠습니다 주인님! 지금 바로 실행해드릴게요~
+[INTENT]
+{{"intent": "COMMAND", "judgment": "STUDY", "action_code": "OPEN_APP", "action_detail": "Code", "emotion": "NORMAL"}}
+
+User's Trust Score: {trust_score}/100
+Memory Context: {memory_context[:200] if memory_context else "(none)"}
+
+User Input: {request.text}
+
+Now respond in the format above (spoken text first, then [INTENT], then JSON):
+"""
+    
+    # Stream the LLM response
+    text_buffer = ""
+    json_buffer = ""
+    separator_found = False
+    chunk_count = 0
+    
+    start_time = time.time()
+    
+    try:
+        async for chunk in llm.astream(streaming_prompt):
+            chunk_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+            
+            if not separator_found:
+                # Check if separator is in this chunk
+                if "[INTENT]" in (text_buffer + chunk_text):
+                    # Split at separator
+                    combined = text_buffer + chunk_text
+                    parts = combined.split("[INTENT]", 1)
+                    text_buffer = parts[0].strip()
+                    json_buffer = parts[1] if len(parts) > 1 else ""
+                    separator_found = True
+                    
+                    # Yield final text chunk before separator
+                    if text_buffer:
+                        yield (text_buffer, False, {"emotion": "NORMAL", "chunk_index": chunk_count})
+                        chunk_count += 1
+                else:
+                    text_buffer += chunk_text
+                    
+                    # Yield text chunks periodically (every ~50 chars or on natural breaks)
+                    # Look for natural break points: periods, commas, exclamation marks
+                    break_points = [".", "!", "?", ",", "~", "♡"]
+                    for bp in break_points:
+                        if bp in text_buffer:
+                            idx = text_buffer.rfind(bp)
+                            if idx > 10:  # Minimum chunk size
+                                to_yield = text_buffer[:idx + 1]
+                                text_buffer = text_buffer[idx + 1:]
+                                yield (to_yield.strip(), False, {"emotion": "NORMAL", "chunk_index": chunk_count})
+                                chunk_count += 1
+                                break
+            else:
+                # After separator, accumulate JSON
+                json_buffer += chunk_text
+        
+        # Parse final JSON
+        elapsed = time.time() - start_time
+        print(f"⏱️ [Highway] Stream completed in {elapsed:.2f}s ({chunk_count} chunks)")
+        
+        intent_data = {
+            "intent": "CHAT",
+            "judgment": "NEUTRAL",
+            "action_code": "NONE",
+            "action_detail": "",
+            "emotion": "NORMAL"
+        }
+        
+        try:
+            json_match = re.search(r'(\{.*\})', json_buffer, re.DOTALL)
+            if json_match:
+                intent_data = json.loads(json_match.group(1))
+        except Exception as e:
+            print(f"⚠️ [Highway] JSON parse warning: {e}")
+        
+        # Yield final chunk with intent
+        yield ("", True, intent_data)
+        
+    except Exception as e:
+        print(f"❌ [Highway] Stream error: {e}")
+        yield ("죄송해요, 잠시 문제가 생겼어요...", True, {
+            "intent": "CHAT",
+            "judgment": "NEUTRAL",
+            "action_code": "NONE",
+            "emotion": "PUZZLE"
+        })
 
 async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     """

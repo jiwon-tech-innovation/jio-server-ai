@@ -362,7 +362,7 @@ async def serve_grpc():
     print("✅ [gRPC] Health Service Registered (ALB Ready)")
     
     # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이)
-    from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler
+    from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler, stream_stream_rpc_method_handler
     
     rpc_method_handlers = {
         'AnalyzeLog': unary_unary_rpc_method_handler(
@@ -384,7 +384,7 @@ async def serve_grpc():
         'SendAppList': unary_unary_rpc_method_handler(
             tracking_servicer.SendAppList,
         ),
-        'TranscribeAudio': stream_unary_rpc_method_handler(
+        'TranscribeAudio': stream_stream_rpc_method_handler(
             tracking_servicer.TranscribeAudio,
         )
     }
@@ -403,18 +403,18 @@ async def serve_grpc():
             self.tracking = tracking_svc
             
         async def TranscribeAudio(self, request_iterator, context):
-            # Pass request_iterator (yielding audio_pb2.AudioRequest) directly to TrackingService.
-            # TrackingService is duck-typed enough to read .audio_data, .is_final from it.
+            # [Highway AI] TranscribeAudio now returns a STREAM of responses
+            # We need to iterate and yield each response
             
-            # Call the delegate
-            tracking_resp = await self.tracking.TranscribeAudio(request_iterator, context)
-            
-            # Convert tracking_pb2.AudioResponse -> audio_pb2.AudioResponse
-            return audio_pb2.AudioResponse(
-                transcript=tracking_resp.transcript,
-                is_emergency=tracking_resp.is_emergency,
-                intent=tracking_resp.intent
-            )
+            async for tracking_resp in self.tracking.TranscribeAudio(request_iterator, context):
+                # Convert tracking_pb2.AudioResponse -> audio_pb2.AudioResponse
+                # Note: audio_pb2.AudioResponse may not have is_partial, is_complete fields
+                # We pass what we can
+                yield audio_pb2.AudioResponse(
+                    transcript=tracking_resp.transcript,
+                    is_emergency=tracking_resp.is_emergency,
+                    intent=tracking_resp.intent
+                )
 
     # Register the Adapter via standard generated method (handles serialization automatically)
     audio_adapter = AudioServiceAdapter(tracking_servicer)
