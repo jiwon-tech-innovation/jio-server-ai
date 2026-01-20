@@ -11,10 +11,15 @@ settings = get_settings()
 # Initialize Groq Client (Global)
 # Enforce 10s timeout to prevent hanging
 # Note: GROQ_API_KEY should be set in environment variables
-client = AsyncGroq(
-    api_key=os.getenv("GROQ_API_KEY"),
-    timeout=10.0
-)
+groq_api_key = os.getenv("GROQ_API_KEY")
+if not groq_api_key:
+    print("⚠️ WARNING: GROQ_API_KEY not set. STT functionality will be disabled.")
+    client = None
+else:
+    client = AsyncGroq(
+        api_key=groq_api_key,
+        timeout=10.0
+    )
 
 async def transcribe_audio(file: UploadFile) -> STTResponse:
     """
@@ -62,6 +67,10 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
     """
     Core Logic: Calls Groq Whisper API.
     """
+    if client is None:
+        print("❌ STT Error: Groq client not initialized. Please set GROQ_API_KEY environment variable.")
+        return STTResponse(text="")
+    
     try:
         # 🔧 Handle Raw PCM (Dev 1 Source)
         # OpenAI/Groq Whisper expects a file with a header (wav, mp3, etc.)

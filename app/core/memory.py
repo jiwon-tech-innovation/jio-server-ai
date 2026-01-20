@@ -41,7 +41,8 @@ def get_long_term_store():
     """
     # --- PGVector Implementation (Production) ---
     # Connection String: postgresql://user:password@host:port/dbname
-    connection_string = f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DB}?sslmode=require"
+    # Note: Docker 내부 PostgreSQL은 SSL을 지원하지 않으므로 sslmode=disable 사용
+    connection_string = f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/{settings.PG_DB}?sslmode=disable"
     
     try:
         from langchain_community.vectorstores import PGVector
