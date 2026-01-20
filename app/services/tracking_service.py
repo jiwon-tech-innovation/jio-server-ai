@@ -235,7 +235,32 @@ class TrackingService(tracking_pb2_grpc.TrackingServiceServicer, core_pb2_grpc.C
                         break
                 
                 # 2-2. AI Detection (If no blacklist hit)
-                if command_type == core_pb2.ServerCommand.NONE:
+                # [Wall 2 -> Wall 3 Logic]
+                # Trigger AI Judge ONLY if input patterns are suspicious (Gaming-like)
+                # 1. Low Entropy Typing: Gaming usually uses limited keys (WASD, QWER) -> Low Entropy (< 3.0)
+                #    Productive work (Coding/Chatting) uses full keyboard -> High Entropy (> 4.0)
+                # 2. High Mouse Activity: Spam clicks (>10/s) or frantic movement (>1000px/s) usually means RTS/FPS.
+                
+                h = heartbeat
+                is_suspicious_input = False
+                
+                # Case A: Suspicious Keyboard (Repetitive Keys)
+                if h.keystroke_count > 5 and h.keyboard_entropy < 3.0:
+                    is_suspicious_input = True
+                    # print(f"🔍 [Wall 2] Suspicious Keyboard: Count={h.keystroke_count}, Entropy={h.keyboard_entropy:.2f}")
+                
+                # Case B: High Mouse Activity (LoL/FPS)
+                elif h.click_count > 10 or h.mouse_distance > 1000:
+                    is_suspicious_input = True
+                    # print(f"🔍 [Wall 2] Suspicious Mouse: Clicks={h.click_count}, Dist={h.mouse_distance}")
+
+                # Case C: Active Blacklist Check fallback (Input exists but not suspicious? Maybe just check anyway if we want strictness)
+                # User asked for "Suspicious" trigger.
+                # If I am just browsing (scroll, low click, no keys), entropy is 0. 
+                # Let's verify: If keys=0, entropy=0. 
+                # My logic: active_keys > 5. So passive browsing is IGNORED.
+                
+                if command_type == core_pb2.ServerCommand.NONE and is_suspicious_input:
                     try:
                         # Throttle AI checks? (Maybe doing it every heartbeat is too much?)
                         # But heartbeat is 1s. Let's rely on GameDetector being fast or create a cache if needed.
