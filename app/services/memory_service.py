@@ -98,24 +98,6 @@ class MemoryService:
         Retrieves the persistent Trust Score from Redis.
         Default: 100 (Max Trust).
         """
-        # [PERSONA OVERRIDE] Special treatment for 'apple071228@gmail.com' (Target User)
-        # Force LOW TRUST (10) and ensure it is synced to Redis (Database)
-        target_user = "apple071228@gmail.com"
-        if user_id == target_user:
-            try:
-                key = f"user:{user_id}:trust_score"
-                client = self._get_redis_client()
-                current_db_val = client.get(key)
-                # Enforce DB consistency: If DB value is not 10, overwrite it.
-                if current_db_val is None or int(float(current_db_val)) != 10:
-                    client.set(key, 10)
-                    print(f"📉 [Trust] Target User '{user_id}': DB value synced to 10 (Was: {current_db_val})")
-                client.close()
-            except Exception as e:
-                print(f"⚠️ [Trust] Failed to sync override to DB: {e}")
-            
-            return 10
-
         try:
             key = f"user:{user_id}:trust_score"
             client = self._get_redis_client()
@@ -123,15 +105,16 @@ class MemoryService:
             client.close()
             
             if val is None:
-                print(f"DEBUG: Trust Score for {user_id} is None, returning 100")
-                return 100
+                # [DEFAULT] New users start at 50 (Mesugaki Mode)
+                print(f"DEBUG: Trust Score for {user_id} is None, returning 50")
+                return 50
             
             score = int(float(val)) # float safe
             print(f"DEBUG: Retrieved Trust Score for {user_id}: {score}")
             return score
         except Exception as e:
             print(f"Trust Score Get Error: {e}")
-            return 100
+            return 50
 
     def update_trust_score(self, user_id: str, delta: int):
         """

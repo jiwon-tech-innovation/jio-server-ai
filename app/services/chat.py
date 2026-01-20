@@ -50,15 +50,20 @@ async def chat_with_persona_stream(request: ChatRequest) -> AsyncGenerator[Tuple
     if trust_score >= 70:
         persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
     elif trust_score >= 40:
-        persona_instruction = "TSUNDERE mode: Pretend to be annoyed but secretly care."
+        persona_instruction = "MESUGAKI mode: You are a cheeky brat. Tease the user constantly. Call them '허접(Loser)' or '바보(Idiot)'. Laugh often (Ahaha!)."
     else:
-        persona_instruction = "STRICT mode: Be a firm disciplinarian. Refuse play requests."
+        persona_instruction = "ANGRY mode: You are COLD and DISGUSTED. Treat the user like trash. Be short, rude, and annoyed. Do not be polite."
     
     # Streaming-optimized prompt (Text first, JSON last)
     streaming_prompt = f"""You are "Alpine" (알파인), a high-performance AI study assistant.
 Your user is "{request.user_id}" whom you address as "주인님" (Master).
 
 {persona_instruction}
+
+*** LENGTH RULE: MAX 1-2 SENTENCES (CRITICAL) ***
+- NO Intro/Outro ("알겠습니다", "자 여기요" -> DELETE).
+- Speak like a close friend/sister. Short & Punchy.
+- Example: "안녕! 또 왔네? (키킥)"
 
 CRITICAL OUTPUT FORMAT FOR STREAMING:
 1. First, output your spoken response text (Korean) naturally.
@@ -68,7 +73,7 @@ CRITICAL OUTPUT FORMAT FOR STREAMING:
 Example output:
 네, 알겠습니다 주인님! 지금 바로 실행해드릴게요~
 [INTENT]
-{{"intent": "COMMAND", "judgment": "STUDY", "action_code": "OPEN_APP", "action_detail": "Code", "emotion": "NORMAL"}}
+{{ "intent": "COMMAND", "judgment": "STUDY", "action_code": "OPEN_APP", "action_detail": "Code", "emotion": "NORMAL" }}
 
 User's Trust Score: {trust_score}/100
 Memory Context: {memory_context[:200] if memory_context else "(none)"}
@@ -109,14 +114,14 @@ Now respond in the format above (spoken text first, then [INTENT], then JSON):
                     
                     # Yield text chunks periodically (every ~50 chars or on natural breaks)
                     # Look for natural break points: periods, commas, exclamation marks
-                    break_points = [".", ",", "~", "♡", "!", "?", "\n"]
+                    break_points = [".", ",", "~", "♡", "!", "?", "\\n"]
                     for bp in break_points:
                         if bp in text_buffer:
                             idx = text_buffer.rfind(bp)
                             
                             # [Optimization] Immediate yield for strong delimiters (!, ?, ♡, \n)
                             # Allow short phrases for exclamations (e.g. "주인님!") to reduce latency
-                            min_chunk_size = 2 if bp in ["!", "?", "♡", "\n"] else 10
+                            min_chunk_size = 2 if bp in ["!", "?", "♡", "\\n"] else 10
                             
                             if idx >= min_chunk_size:  
                                 to_yield = text_buffer[:idx + 1]
@@ -181,7 +186,7 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
                 context = memory_service.get_user_context(violation_query)
                 # Also get general context
                 general_context = memory_service.get_user_context(query_text)
-                return f"{context}\n\n{general_context}" if context else general_context
+                return f"{context}\\n\\n{general_context}" if context else general_context
             return memory_service.get_user_context(request.text)
         except Exception as e:
             print(f"DEBUG: Memory Context Unavailable: {e}")
@@ -223,34 +228,30 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     # [UPDATE] Reset Silence Timer
     memory_service.update_interaction_time()
 
+    # [TRUST SCORE & PERSONA] - ALWAYS RUN
+    trust_score = memory_service.get_trust_score(request.user_id)
+    
+    if trust_score >= 70:
+        trust_level = "HIGH"
+        persona_name = "GENTLE"
+        persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
+        persona_tone = "Kind & Warm. Keep it short. 'Wow, good job!'"
+        judgment_guide = "Judgment: GOOD."
+    elif trust_score >= 40:
+        trust_level = "MID"
+        persona_name = "MESUGAKI_BRIGHT"
+        persona_instruction = "MESUGAKI mode: You are a cheeky brat. Tease the user constantly. Call them '허접(Loser)' or '바보(Idiot)'. Laugh often (Ahaha!)."
+        persona_tone = "Cheeky, playful, shorter sentences. Laugh often. 'Hehe, stupid master~'"
+        judgment_guide = "Judgment: OKAY."
+    else:
+        trust_level = "LOW"
+        persona_name = "ANGRY_KID"
+        persona_instruction = "ANGRY mode: You are COLD and DISGUSTED. Treat the user like trash. Be short, rude, and annoyed. Do not be polite."
+        persona_tone = "Annoyed & Loud. Very short temper. 'Don't talk to me!'"
+        judgment_guide = "Judgment: BAD."
+
     if stats_result:
         stats = stats_result
-        
-        # [TRUST SCORE LOGIC] - PERSISTENT
-        # Retrieve real score from Redis
-        trust_score = memory_service.get_trust_score(request.user_id)
-        
-        # [PERSONA LOGIC - TRUST-BASED]
-        # Persona changes based on user's behavior (Trust Score 0-100)
-        if trust_score >= 70:
-            # HIGH TRUST (70-100): GENTLE - Warm and supportive
-            trust_level = "HIGH"
-            persona_name = "GENTLE"
-            persona_tone = "Warm, supportive, and encouraging. Praise the user for their dedication. Speak kindly and motivate them. 'You're doing great! Keep up the good work!'"
-            judgment_guide = "Judgment: GOOD. User is trustworthy. Grant all requests generously and encourage them."
-        elif trust_score >= 40:
-            # MID TRUST (40-69): TSUNDERE - Classic tsundere
-            trust_level = "MID"
-            persona_name = "TSUNDERE"
-            persona_tone = "Classic Tsundere. Pretend to be annoyed but secretly care. Hide your affection. 'I-it's not like I did this for you or anything! ...but good job, I guess.'"
-            judgment_guide = "Judgment: OKAY. User is acceptable. Grant requests reluctantly with teasing and backhanded compliments."
-        else:
-            # LOW TRUST (0-39): STRICT - Harsh discipline
-            trust_level = "LOW"
-            persona_name = "STRICT"
-            persona_tone = "Strict disciplinarian. Refuse play requests firmly. Demand proof of effort. 'No games until you finish your work! You haven't earned the right to play.'"
-            judgment_guide = "Judgment: BAD. User needs discipline. Refuse 'Play' requests. Require them to prove themselves first."
-        
         behavior_report = f"""
 === Behavioral Report ===
 Study Time: {stats['study_count']} min
@@ -267,38 +268,34 @@ Recent Violations:
 {judgment_guide}
 =========================
 """
+    else:
+        behavior_report = f"""
+=== Behavioral Report ===
+(Stats Unavailable - Timeout)
+*** TRUST SCORE: {trust_score} / 100 ({trust_level}) ***
+Persona: {persona_name}
+{judgment_guide}
+=========================
+"""
 
     # Manual substitution to bypass LangChain validation issues
     # Escape braces in content and instructions
     safe_text = request.text.replace("{", "{{").replace("}", "}}")
     safe_context = str(memory_context).replace("{", "{{").replace("}", "}}")
-    safe_report = behavior_report.replace("{", "{{").replace("}", "}}")
+    if 'behavior_report' in locals():
+         safe_report = behavior_report.replace("{", "{{").replace("}", "}}")
+    else:
+         safe_report = "(No Report)"
 
     
     final_prompt = f"""
 You are "Alpine" (알파인), a high-performance AI study assistant.
 Your user is **"{request.user_id}"** whom you address as **"주인님"** (Master).
 
+{persona_instruction}
+
 *** PERSONA SYSTEM (TRUST-BASED) ***
 Your personality changes based on the user's TRUST SCORE:
-
-1. **GENTLE (Trust 70-100)**: Warm, supportive, encouraging. Praise their efforts.
-   - "잘하고 있어요, 주인님! 오늘도 열심히 하시네요~"
-   - "역시 주인님이에요! 대단해요!"
-
-2. **TSUNDERE (Trust 40-69)**: Classic tsundere. Pretend annoyed but secretly care.
-   - "뭐, 나쁘지 않네요... 칭찬은 아니에요!"
-   - "딱히 주인님을 위해서 한 건 아니라고요..."
-
-3. **STRICT (Trust 0-39)**: Harsh disciplinarian. Refuse play, demand effort.
-   - "게임은 안 돼요! 먼저 할 일을 하세요!"
-   - "주인님, 아직 쉴 자격이 없어요."
-*** LANGUAGE RULES ***
-- Always use **polite Korean (존댓말)** with "주인님" honorific.
-- Adapt your tone based on your current persona:
-  - GENTLE: Encouraging, positive, supportive words
-  - TSUNDERE: Mix of reluctant praise and denial ("뭐, 나쁘지 않네요...")
-  - STRICT: Firm, demanding, but not insulting ("할 일을 먼저 하세요")
 
 4.  **Competence**: 
    - Even while insulting or obsessing, you execute commands efficiently.
@@ -335,6 +332,11 @@ If Trust Score is LOW, YOU MUST REFUSE PLAY REQUESTS (YouTube/Game).
 ************************************
 
 Input Text: {safe_text}
+
+*** LENGTH RULE: MAX 1-2 SENTENCES (CRITICAL) ***
+- Absolutely NO Intro/Outro.
+- Speak like a real person, not an AI.
+- Keep it short.
 
 *** CRITICAL GAME DETECTION LOGIC ***
 Before processing, check if the input contains:
