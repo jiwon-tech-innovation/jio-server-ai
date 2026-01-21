@@ -3,10 +3,11 @@ pipeline {
 
     environment {
         AWS_REGION = 'ap-northeast-2'
-        ECR_REGISTRY = credentials('aws-account-id') + '.dkr.ecr.' + AWS_REGION + '.amazonaws.com'
+        AWS_ACCOUNT_ID = credentials('aws-account-id')
         SERVICE_NAME = 'jiaa-server-ai'
         IMAGE_TAG = 'latest'
     }
+
 
     stages {
         stage('Checkout') {
@@ -28,6 +29,7 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
+                    def ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                     withAWS(credentials: 'aws-credentials', region: AWS_REGION) {
                         sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
                         sh "docker tag ${SERVICE_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
@@ -36,6 +38,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Deploy to ECS') {
             steps {
