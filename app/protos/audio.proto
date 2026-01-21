@@ -6,8 +6,8 @@ option java_multiple_files = true;
 option java_package = "com.jiaa.common.audio";
 
 service AudioService {
-  // 성현(Dev 1) -> 윤성(Dev 5): 음성 조각 계속 보냄 -> 문장 끝나면 텍스트 1개 리턴
-  rpc TranscribeAudio(stream AudioRequest) returns (AudioResponse);
+  // [Highway AI] 양방향 스트리밍: 음성 조각을 받으면서 동시에 AI 응답 청크를 보냄
+  rpc TranscribeAudio(stream AudioRequest) returns (stream AudioResponse);
 }
 
 message AudioRequest {
@@ -21,7 +21,13 @@ message AudioRequest {
 }
 
 message AudioResponse {
-  string transcript = 1;      // 변환된 텍스트 ("살려줘", "유튜브 꺼줘")
-  bool is_emergency = 2;      // 위급 상황 여부 (비명 등)
-  string intent = 3;          // (옵션) 의도 분석 결과 ("COMMAND", "CHAT")
+  string transcript = 1;      // 변환된 텍스트 (STT 결과 또는 AI 응답 청크)
+  bool is_emergency = 2;      // 위급 상황 여부
+  string intent = 3;          // 의도 분석 결과 (JSON) - 마지막 청크에만 포함
+  
+  // [Highway AI] Streaming 전용 필드
+  bool is_partial = 4;        // True = 스트리밍 중간 청크 (TTS 재생용 텍스트)
+  bool is_complete = 5;       // True = 마지막 청크 (intent JSON 포함)
+  string text_chunk = 6;      // AI 응답 텍스트 조각 (TTS용)
+  string emotion = 7;         // 감정 태그 (NORMAL, ANGRY, etc.)
 }

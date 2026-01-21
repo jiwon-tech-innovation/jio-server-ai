@@ -8,18 +8,24 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# Initialize Groq Client (Global)
-# Enforce 10s timeout to prevent hanging
-# Note: GROQ_API_KEY should be set in environment variables
-groq_api_key = os.getenv("GROQ_API_KEY")
-if not groq_api_key:
-    print("⚠️ WARNING: GROQ_API_KEY not set. STT functionality will be disabled.")
-    client = None
-else:
-    client = AsyncGroq(
-        api_key=groq_api_key,
+# Initialize Groq Client (Lazy)
+_client_instance = None
+
+def get_groq_client():
+    global _client_instance
+    if _client_instance:
+        return _client_instance
+    
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print("[STT] ⚠️ GROQ_API_KEY not found. Helper will fail if called.")
+        return None
+        
+    _client_instance = AsyncGroq(
+        api_key=api_key,
         timeout=10.0
     )
+    return _client_instance
 
 async def transcribe_audio(file: UploadFile) -> STTResponse:
     """
@@ -96,9 +102,12 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
 
         print(f"[STT] Calling Groq Whisper... ({duration_seconds:.2f}s)")
         
-        # Call Groq
-        # Prompt guide: https://platform.openai.com/docs/guides/speech-to-text/prompting
-        # We include keywords relevant to the Desktop Assistant context.
+        # Lazy Init Client
+        client = get_groq_client()
+        if not client:
+             print("[STT] ❌ Cannot transcribe: GROQ_API_KEY missing.")
+             return STTResponse(text="")
+
         transcript = await client.audio.transcriptions.create(
             model="whisper-large-v3", # 🚀 Changed to Groq model
             file=audio_file,

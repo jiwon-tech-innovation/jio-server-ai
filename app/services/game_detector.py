@@ -4,14 +4,27 @@ from app.core.llm import get_llm, HAIKU_MODEL_ID
 from app.schemas.game import GameDetectRequest, GameDetectResponse
 from app.services.memory_service import memory_service
 
+# Simple in-memory cache: {apps_str: (timestamp, result)}
+_detection_cache = {}
+CACHE_TTL = 300  # 5 minutes
+
 async def detect_games(request: GameDetectRequest) -> GameDetectResponse:
     """
     Detects if any games are running from the app list using Claude 3.5 Haiku.
     """
+    apps_str = ", ".join(sorted(request.apps)) # Ensure deterministic order
+    
+    # 1. Check Cache
+    import time
+    now = time.time()
+    if apps_str in _detection_cache:
+        timestamp, cached_result = _detection_cache[apps_str]
+        if now - timestamp < CACHE_TTL:
+            # print(f"⚡ [GameDetector] Cache Hit") # Verbose logging
+            return cached_result
+    
     llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.7)
     parser = PydanticOutputParser(pydantic_object=GameDetectResponse)
-
-    apps_str = ", ".join(request.apps)
 
     prompt = PromptTemplate(
         template="""
@@ -63,6 +76,10 @@ Example format:
         result = await chain.ainvoke({
             "apps": apps_str
         })
+        
+        # 2. Update Cache
+        _detection_cache[apps_str] = (now, result)
+        
         if result.is_game_detected:
             # Debug log for game detection
             print(

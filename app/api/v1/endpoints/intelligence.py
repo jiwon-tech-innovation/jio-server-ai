@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File
-from app.schemas.intelligence import ClassifyRequest, ClassifyResponse, SolveRequest, SolveResponse, STTResponse, ChatRequest, ChatResponse, QuizResultRequest
-from app.services import classifier, solver, stt, chat
+from app.schemas.intelligence import ClassifyRequest, ClassifyResponse, SolveRequest, SolveResponse, STTResponse, ChatRequest, ChatResponse, QuizResultRequest, SubgoalGenerateRequest, SubgoalResponse
+from app.services import classifier, solver, stt, chat, planner
 from app.services.memory_service import memory_service
 
 router = APIRouter()
@@ -75,5 +75,14 @@ async def manual_memory_consolidation():
     print("📢 [API] Manual Memory Consolidation Triggered")
     await memory_service.consolidate_memory()
     return {"status": "success", "message": "Memory consolidation started (Check server logs)"}
+
+@router.post("/subgoals/generate", response_model=SubgoalResponse)
+async def generate_subgoals(request: SubgoalGenerateRequest):
+    """
+    Generates subgoals from a main goal string.
+    REST alternative to gRPC GenerateSubgoals.
+    """
+    subgoals = await planner.generate_subgoals(request.goal_text)
+    return {"status": "success", "subgoals": subgoals}
 
 

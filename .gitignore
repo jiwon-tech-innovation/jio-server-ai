@@ -37,4 +37,3 @@ tests/test_calendar_manual.py
 test_planner_local.py
 tests/test_report_import.py
 test_planner_local.py
-

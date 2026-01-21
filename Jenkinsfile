@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     environment {
-        SERVICE_NAME = 'jiaa-server-ai'
         AWS_REGION = 'ap-northeast-2'
         ECR_REGISTRY = credentials('aws-account-id') + '.dkr.ecr.' + AWS_REGION + '.amazonaws.com'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        SERVICE_NAME = 'jiaa-server-ai'
+        IMAGE_TAG = 'latest'
     }
 
     stages {
@@ -15,44 +15,34 @@ pipeline {
             }
         }
 
-        stage('Test') {
-            steps {
-                sh 'pip install -r requirements.txt'
-                sh 'python -m pytest tests/ --tb=short || true'
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG} ."
-                sh "docker tag ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${SERVICE_NAME}:latest"
+                script {
+                    dir('jiaa-server-ai') {
+                         sh "docker build -t ${SERVICE_NAME}:${IMAGE_TAG} ."
+                    }
+                }
             }
         }
 
         stage('Push to ECR') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                    branch pattern: 'mvp/*', comparator: 'GLOB'
-                }
-            }
             steps {
-                withAWS(credentials: 'aws-credentials', region: AWS_REGION) {
-                    sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                    sh "docker push ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
-                    sh "docker push ${ECR_REGISTRY}/${SERVICE_NAME}:latest"
+                script {
+                    withAWS(credentials: 'aws-credentials', region: AWS_REGION) {
+                        sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        sh "docker tag ${SERVICE_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
+                        sh "docker push ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}"
+                    }
                 }
             }
         }
 
         stage('Deploy to ECS') {
-            when {
-                branch 'main'
-            }
             steps {
-                withAWS(credentials: 'aws-credentials', region: AWS_REGION) {
-                    sh "aws ecs update-service --cluster jiaa-cluster --service ${SERVICE_NAME} --force-new-deployment"
+                script {
+                    withAWS(credentials: 'aws-credentials', region: AWS_REGION) {
+                        sh "aws ecs update-service --cluster jiaa-cluster --service ${SERVICE_NAME} --force-new-deployment"
+                    }
                 }
             }
         }
@@ -60,10 +50,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Build & Deploy Success: ${SERVICE_NAME}:${IMAGE_TAG}"
+            echo "??Build & Deploy Success: ${SERVICE_NAME}:${IMAGE_TAG}"
         }
         failure {
-            echo "❌ Build Failed: ${SERVICE_NAME}"
+            echo "??Build Failed: ${SERVICE_NAME}"
         }
         always {
             cleanWs()

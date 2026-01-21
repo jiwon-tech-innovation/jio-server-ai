@@ -22,6 +22,26 @@ class QuizResultRequest(BaseModel):
     wrong_answers: List[QuizWrongAnswer] = []
     user_id: str = "user" # Default user
 
+class QuizGenerateRequest(BaseModel):
+    topic: str
+    difficulty: str = "Medium"
+
+from app.services import planner
+
+@router.post("/generate")
+async def generate_quiz(request: QuizGenerateRequest):
+    """
+    Generates a technical quiz based on topic and difficulty.
+    Replaces gRPC implementation to avoid ALB/Protocol issues.
+    """
+    print(f"🧠 [Quiz] REST Generation Request: {request.topic} ({request.difficulty})")
+    try:
+        quizzes = await planner.generate_quiz(request.topic, request.difficulty)
+        return {"status": "success", "quizzes": quizzes}
+    except Exception as e:
+        print(f"❌ [Quiz] Generation Failed: {e}")
+        return {"status": "error", "message": str(e), "quizzes": []}
+
 async def forward_log_to_data_server(payload: dict):
     """
     Background Task: Forward generic log to jiaa-server-data (InfluxDB)

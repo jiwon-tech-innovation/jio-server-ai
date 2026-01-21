@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import intelligence, prediction, review, memory, game, quiz, event
+from app.api.v1.endpoints import intelligence, prediction, review, memory, game, quiz, stats, event
 
 api_router = APIRouter()
 api_router.include_router(intelligence.router, tags=["intelligence"])
