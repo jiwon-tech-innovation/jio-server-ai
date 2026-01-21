@@ -73,7 +73,9 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
     """
     Core Logic: Calls Groq Whisper API.
     """
-    if client is None:
+    # Initialize client first to avoid UnboundLocalError
+    client = get_groq_client()
+    if not client:
         print("❌ STT Error: Groq client not initialized. Please set GROQ_API_KEY environment variable.")
         return STTResponse(text="")
     
@@ -101,12 +103,6 @@ async def transcribe_bytes(file_content: bytes, file_ext: str = "mp3") -> STTRes
         audio_file.name = f"voice.{file_ext}" # OpenAI/Groq needs a filename
 
         print(f"[STT] Calling Groq Whisper... ({duration_seconds:.2f}s)")
-        
-        # Lazy Init Client
-        client = get_groq_client()
-        if not client:
-             print("[STT] ❌ Cannot transcribe: GROQ_API_KEY missing.")
-             return STTResponse(text="")
 
         transcript = await client.audio.transcriptions.create(
             model="whisper-large-v3", # 🚀 Changed to Groq model
