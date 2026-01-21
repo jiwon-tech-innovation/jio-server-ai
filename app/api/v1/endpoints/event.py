@@ -20,6 +20,14 @@ from app.schemas.event import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# 🔥 Trust score penalties for distraction events
+TRUST_PENALTIES = {
+    "SMARTPHONE_DETECTED": -5,
+    "DROWSINESS_DETECTED": -3,
+    "GAZE_DEVIATION": -2,
+    "GAME_EXECUTED": -3,
+}
+
 @router.post("/events", response_model=EventCreateResponse)
 async def create_event(
     request: EventCreateRequest,
@@ -28,6 +36,7 @@ async def create_event(
     """
     이벤트 발생을 기록합니다.
     스마트폰 감지, 졸음 감지, 게임 실행, 시선 이탈 등의 이벤트를 POST 요청으로 저장합니다.
+    또한 해당 이벤트에 따라 Trust Score를 감소시킵니다.
     """
     try:
         # 이벤트 레코드 생성
@@ -41,6 +50,17 @@ async def create_event(
         db.add(event)
         await db.commit()
         await db.refresh(event)
+        
+        # 🔥 Trust Score 감소 처리
+        event_type_str = request.event_type.value
+        if event_type_str in TRUST_PENALTIES:
+            try:
+                from app.services.memory_service import memory_service
+                penalty = TRUST_PENALTIES[event_type_str]
+                memory_service.update_trust_score(request.user_id, penalty)
+                logger.info(f"📉 [Trust] {request.user_id}: {penalty} for {event_type_str}")
+            except Exception as trust_err:
+                logger.warning(f"Failed to update trust score: {trust_err}")
         
         return EventCreateResponse(
             id=str(event.id),

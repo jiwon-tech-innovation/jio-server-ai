@@ -47,7 +47,8 @@ async def chat_with_persona_stream(request: ChatRequest) -> AsyncGenerator[Tuple
         pass  # Use defaults if timeout
     
     # Determine persona based on trust
-    if trust_score >= 70:
+    # [TEMP] All users get GENTLE mode for testing
+    if trust_score >= 0:  # Changed from 70 to 0 - everyone gets GENTLE
         persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
     elif trust_score >= 40:
         persona_instruction = "MESUGAKI mode: You are a cheeky brat. Tease the user constantly. Call them '허접(Loser)' or '바보(Idiot)'. Laugh often (Ahaha!)."
@@ -231,7 +232,8 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     # [TRUST SCORE & PERSONA] - ALWAYS RUN
     trust_score = memory_service.get_trust_score(request.user_id)
     
-    if trust_score >= 70:
+    # [TEMP] All users get GENTLE mode for testing
+    if trust_score >= 0:  # Changed from 70 to 0 - everyone gets GENTLE
         trust_level = "HIGH"
         persona_name = "GENTLE"
         persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
