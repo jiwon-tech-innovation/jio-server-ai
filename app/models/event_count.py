@@ -21,8 +21,8 @@ class EventCount(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
     
     # 추가 메타데이터 (선택적)
-    # metadata는 SQLAlchemy 예약어이므로 Python 속성 이름은 meta_data로 하고, DB 컬럼 이름은 metadata로 유지
-    meta_data = Column("metadata", String, nullable=True)  # JSON 문자열로 저장 가능
+    # 실제 DB 컬럼 이름은 meta_data (테이블 생성 시 meta_data로 생성됨)
+    meta_data = Column("meta_data", String, nullable=True)  # JSON 문자열로 저장 가능
     
     # 인덱스: 사용자별, 이벤트 타입별, 시간별 조회 최적화
     __table_args__ = (

@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from datetime import datetime, timedelta
-from sqlalchemy import func, select
 from typing import Optional
 import logging
 from traceback import format_exc
@@ -51,6 +50,8 @@ async def create_event(
         await db.commit()
         await db.refresh(event)
         
+        logger.info(f"✅ [Event] Recorded {request.event_type.value} for user {request.user_id}")
+        
         # 🔥 Trust Score 감소 처리
         event_type_str = request.event_type.value
         if event_type_str in TRUST_PENALTIES:
@@ -71,7 +72,18 @@ async def create_event(
         )
     except Exception as e:
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to record event: {str(e)}")
+        error_detail = str(e)
+        error_traceback = format_exc()
+        logger.error(f"❌ [Event] Failed to record event: {error_detail}\n{error_traceback}")
+        
+        # 테이블이 없는 경우 명확한 메시지
+        if "does not exist" in error_detail or "relation" in error_detail.lower():
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Database table not found. Please ensure event_counts table exists in jiaa_memory database. Error: {error_detail}"
+            )
+        
+        raise HTTPException(status_code=500, detail=f"Failed to record event: {error_detail}")
 
 @router.get("/events/stats", response_model=EventStatsResponse)
 async def get_event_stats(
@@ -144,7 +156,11 @@ async def get_weekly_event_stats(
     일별로 이벤트 타입별 발생 횟수를 반환합니다.
     """
     try:
-        DAYS_KR = ['일', '월', '화', '수', '목', '금', '토']
+        # user_id를 문자열로 확실히 변환 (숫자로 전달될 수 있음)
+        user_id_str = str(user_id)
+        
+        # weekday(): 월요일=0, 일요일=6
+        DAYS_KR = ['월', '화', '수', '목', '금', '토', '일']
         
         # 날짜 범위 계산
         today = datetime.utcnow()
@@ -157,9 +173,15 @@ async def get_weekly_event_stats(
         for i in range(7):
             date = start_date + timedelta(days=i)
             date_key = f"{date.month:02d}/{date.day:02d}"
-            day_label = DAYS_KR[date.weekday()]
+            weekday_idx = date.weekday()
             
-            # 해당 날짜의 시작과 끝 시간
+            # weekday() 범위 체크 (0-6)
+            if 0 <= weekday_idx < len(DAYS_KR):
+                day_label = DAYS_KR[weekday_idx]
+            else:
+                day_label = "?"
+            
+            # 해당 날짜의 시작과 끝 시간 (UTC)
             day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
             day_end = day_start + timedelta(days=1)
             
@@ -169,25 +191,34 @@ async def get_weekly_event_stats(
             game_count = 0
             gaze_count = 0
             
-            for event_type in EventType:
-                count_query = select(func.count(EventCount.id)).where(
-                    EventCount.user_id == user_id,
-                    EventCount.event_type == event_type.value
-                ).where(
-                    EventCount.timestamp >= day_start,
-                    EventCount.timestamp < day_end
-                )
-                count_result = await db.execute(count_query)
-                count = count_result.scalar() or 0
-                
-                if event_type == EventType.SMARTPHONE_DETECTED:
-                    phone_count = count
-                elif event_type == EventType.DROWSINESS_DETECTED:
-                    drowsy_count = count
-                elif event_type == EventType.GAME_EXECUTED:
-                    game_count = count
-                elif event_type == EventType.GAZE_DEVIATION:
-                    gaze_count = count
+            try:
+                for event_type in EventType:
+                    try:
+                        count_query = select(func.count(EventCount.id)).where(
+                            EventCount.user_id == user_id_str,
+                            EventCount.event_type == event_type.value,
+                            EventCount.timestamp >= day_start,
+                            EventCount.timestamp < day_end
+                        )
+                        count_result = await db.execute(count_query)
+                        count = count_result.scalar()
+                        if count is None:
+                            count = 0
+                    except Exception as query_error:
+                        logger.warning(f"Query error for {event_type.value} on {date_key}: {query_error}")
+                        count = 0
+                    
+                    if event_type == EventType.SMARTPHONE_DETECTED:
+                        phone_count = count
+                    elif event_type == EventType.DROWSINESS_DETECTED:
+                        drowsy_count = count
+                    elif event_type == EventType.GAME_EXECUTED:
+                        game_count = count
+                    elif event_type == EventType.GAZE_DEVIATION:
+                        gaze_count = count
+            except Exception as query_error:
+                logger.error(f"Query error for date {date_key}: {query_error}", exc_info=True)
+                # 쿼리 실패 시 0으로 유지
             
             daily_stats.append(DailyEventStats(
                 date=date_key,
@@ -200,7 +231,7 @@ async def get_weekly_event_stats(
             ))
         
         return WeeklyEventStatsResponse(
-            user_id=user_id,
+            user_id=user_id_str,
             daily_stats=daily_stats,
             week_offset=week_offset
         )
