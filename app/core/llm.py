@@ -27,6 +27,9 @@ def get_llm(model_id: str, temperature: float = 0.0):
     return ChatBedrock(
         client=client,
         model_id=model_id,
-        model_kwargs={"temperature": temperature},
+        model_kwargs={
+            "temperature": temperature,
+            "max_tokens": 4096
+        },
         region_name=settings.BEDROCK_REGION
     )

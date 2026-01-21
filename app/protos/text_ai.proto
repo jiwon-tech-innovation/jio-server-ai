@@ -12,6 +12,9 @@ service TextAIService {
   
   // Direct Chat with Persona (Text-to-Text)
   rpc Chat (ChatRequest) returns (ChatResponse);
+
+  // Generate Technical Quiz
+  rpc GenerateQuiz (QuizRequest) returns (QuizResponse);
 }
 
 message GoalRequest {
@@ -34,4 +37,25 @@ message ChatResponse {
   string action_detail = 4;    // Target
   string emotion = 5;          // Emotion Tag
   string judgment = 6;         // STUDY, PLAY, NEUTRAL
+}
+
+message QuizRequest {
+  string topic = 1;       // e.g., "Python Asyncio"
+  string difficulty = 2;  // "Easy", "Medium", "Hard"
+}
+
+message QuizItem {
+  string question = 1;
+  repeated string options = 2;
+  string answer = 3; 
+  string explanation = 4;
+}
+
+message SubgoalQuiz {
+  string subgoal = 1;
+  repeated QuizItem quizzes = 2;
+}
+
+message QuizResponse {
+  repeated SubgoalQuiz items = 1;
 }

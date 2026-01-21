@@ -14,7 +14,7 @@ class InfluxClientWrapper:
                 url=settings.INFLUXDB_URL,
                 token=settings.INFLUXDB_TOKEN,
                 org=settings.INFLUXDB_ORG,
-                timeout=2000  # 2 seconds timeout to prevent blocking gRPC
+                timeout=500  # 0.5s timeout for fast fail-over
             )
         return cls._client
 

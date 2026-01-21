@@ -48,6 +48,16 @@ class SolveResponse(BaseModel):
     comfort_message: str  # Spec says "comfort_message"
     til_content: str      # Spec says "til_content" (Today I Learned)
 
+# Quiz
+class QuizResultRequest(BaseModel):
+    topic: str
+    score: int
+    max_score: int
+
+class QuizGenerateRequest(BaseModel):
+    topic: str
+    difficulty: str
+
 # STT
 class STTResponse(BaseModel):
     text: str
@@ -55,6 +65,7 @@ class STTResponse(BaseModel):
 # Chat
 class ChatRequest(BaseModel):
     text: str
+    user_id: Optional[str] = "dev1"
 
 class ChatResponse(BaseModel):
     intent: str # COMMAND, CHAT
@@ -67,3 +78,10 @@ class ChatResponse(BaseModel):
     # [Multi-Command Support]
     multi_actions: Optional[List[Dict[str, Any]]] = None
 
+# Subgoals (New)
+class SubgoalGenerateRequest(BaseModel):
+    goal_text: str
+
+class SubgoalResponse(BaseModel):
+    status: str
+    subgoals: List[str]

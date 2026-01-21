@@ -1,13 +1,169 @@
 from langchain_core.prompts import PromptTemplate
 from app.core.llm import get_llm, HAIKU_MODEL_ID
 from app.schemas.intelligence import ChatRequest, ChatResponse
+from app.schemas.game import GameDetectRequest
 from app.services.memory_service import memory_service
+from app.services import game_detector
 import re
 import json
 import asyncio
+from typing import AsyncGenerator, Tuple
 
 
 from app.services.statistic_service import statistic_service
+
+
+# =============================================================================
+# [Highway AI] Streaming Chat Implementation
+# =============================================================================
+
+async def chat_with_persona_stream(request: ChatRequest) -> AsyncGenerator[Tuple[str, bool, dict], None]:
+    """
+    Streaming version of chat_with_persona.
+    Yields (text_chunk, is_complete, metadata) tuples.
+    
+    - is_complete=False: Partial text for TTS playback
+    - is_complete=True: Final chunk with full intent/command JSON
+    
+    Protocol: "Text First, JSON Last"
+    LLM outputs: "네, 알겠습니다 주인님! [SEP] {json_data}"
+    """
+    import time
+    
+    llm = get_llm(model_id=HAIKU_MODEL_ID, temperature=0.1)
+    
+    # Get context (simplified, non-blocking with very short timeout)
+    memory_context = ""
+    trust_score = 50  # Default mid-trust
+    
+    try:
+        # Quick context fetch (300ms timeout for streaming responsiveness)
+        async def quick_memory():
+            return memory_service.get_user_context(request.text)
+        
+        memory_context = await asyncio.wait_for(quick_memory(), timeout=0.3)
+        trust_score = memory_service.get_trust_score(request.user_id)
+    except Exception:
+        pass  # Use defaults if timeout
+    
+    # Determine persona based on trust
+    # [TEMP] All users get GENTLE mode for testing
+    if trust_score >= 0:  # Changed from 70 to 0 - everyone gets GENTLE
+        persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
+    elif trust_score >= 40:
+        persona_instruction = "MESUGAKI mode: You are a cheeky brat. Tease the user constantly. Call them '허접(Loser)' or '바보(Idiot)'. Laugh often (Ahaha!)."
+    else:
+        persona_instruction = "ANGRY mode: You are COLD and DISGUSTED. Treat the user like trash. Be short, rude, and annoyed. Do not be polite."
+    
+    # Streaming-optimized prompt (Text first, JSON last)
+    streaming_prompt = f"""You are "Alpine" (알파인), a high-performance AI study assistant.
+Your user is "{request.user_id}" whom you address as "주인님" (Master).
+
+{persona_instruction}
+
+*** LENGTH RULE: MAX 1-2 SENTENCES (CRITICAL) ***
+- NO Intro/Outro ("알겠습니다", "자 여기요" -> DELETE).
+- Speak like a close friend/sister. Short & Punchy.
+- Example: "안녕! 또 왔네? (키킥)"
+
+CRITICAL OUTPUT FORMAT FOR STREAMING:
+1. First, output your spoken response text (Korean) naturally.
+2. Then output the separator: [INTENT]
+3. Finally, output the JSON command data.
+
+Example output:
+네, 알겠습니다 주인님! 지금 바로 실행해드릴게요~
+[INTENT]
+{{ "intent": "COMMAND", "judgment": "STUDY", "action_code": "OPEN_APP", "action_detail": "Code", "emotion": "NORMAL" }}
+
+User's Trust Score: {trust_score}/100
+Memory Context: {memory_context[:200] if memory_context else "(none)"}
+
+User Input: {request.text}
+
+Now respond in the format above (spoken text first, then [INTENT], then JSON):
+"""
+    
+    # Stream the LLM response
+    text_buffer = ""
+    json_buffer = ""
+    separator_found = False
+    chunk_count = 0
+    
+    start_time = time.time()
+    
+    try:
+        async for chunk in llm.astream(streaming_prompt):
+            chunk_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+            
+            if not separator_found:
+                # Check if separator is in this chunk
+                if "[INTENT]" in (text_buffer + chunk_text):
+                    # Split at separator
+                    combined = text_buffer + chunk_text
+                    parts = combined.split("[INTENT]", 1)
+                    text_buffer = parts[0].strip()
+                    json_buffer = parts[1] if len(parts) > 1 else ""
+                    separator_found = True
+                    
+                    # Yield final text chunk before separator
+                    if text_buffer:
+                        yield (text_buffer, False, {"emotion": "NORMAL", "chunk_index": chunk_count})
+                        chunk_count += 1
+                else:
+                    text_buffer += chunk_text
+                    
+                    # Yield text chunks periodically (every ~50 chars or on natural breaks)
+                    # Look for natural break points: periods, commas, exclamation marks
+                    break_points = [".", ",", "~", "♡", "!", "?", "\\n"]
+                    for bp in break_points:
+                        if bp in text_buffer:
+                            idx = text_buffer.rfind(bp)
+                            
+                            # [Optimization] Immediate yield for strong delimiters (!, ?, ♡, \n)
+                            # Allow short phrases for exclamations (e.g. "주인님!") to reduce latency
+                            min_chunk_size = 2 if bp in ["!", "?", "♡", "\\n"] else 10
+                            
+                            if idx >= min_chunk_size:  
+                                to_yield = text_buffer[:idx + 1]
+                                text_buffer = text_buffer[idx + 1:]
+                                yield (to_yield.strip(), False, {"emotion": "NORMAL", "chunk_index": chunk_count})
+                                chunk_count += 1
+                                break
+            else:
+                # After separator, accumulate JSON
+                json_buffer += chunk_text
+        
+        # Parse final JSON
+        elapsed = time.time() - start_time
+        print(f"⏱️ [Highway] Stream completed in {elapsed:.2f}s ({chunk_count} chunks)")
+        
+        intent_data = {
+            "intent": "CHAT",
+            "judgment": "NEUTRAL",
+            "action_code": "NONE",
+            "action_detail": "",
+            "emotion": "NORMAL"
+        }
+        
+        try:
+            json_match = re.search(r'(\{.*\})', json_buffer, re.DOTALL)
+            if json_match:
+                intent_data = json.loads(json_match.group(1))
+        except Exception as e:
+            print(f"⚠️ [Highway] JSON parse warning: {e}")
+        
+        # Yield final chunk with intent
+        yield ("", True, intent_data)
+        
+    except Exception as e:
+        print(f"❌ [Highway] Stream error: {e}")
+        yield ("죄송해요, 잠시 문제가 생겼어요...", True, {
+            "intent": "CHAT",
+            "judgment": "NEUTRAL",
+            "action_code": "NONE",
+            "emotion": "PUZZLE"
+        })
 
 async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     """
@@ -23,6 +179,15 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
 
     async def get_memory():
         try:
+            # For game-related queries, search for violations more aggressively
+            query_text = request.text
+            if any(keyword in query_text.lower() for keyword in ["한 판", "할게", "알았어", "그만", "끌게", "종료"]):
+                # Search for game violations using general keywords (not hardcoded game names)
+                violation_query = "게임 위반, 게임 감지, 딴짓, 공부 안함"
+                context = memory_service.get_user_context(violation_query)
+                # Also get general context
+                general_context = memory_service.get_user_context(query_text)
+                return f"{context}\\n\\n{general_context}" if context else general_context
             return memory_service.get_user_context(request.text)
         except Exception as e:
             print(f"DEBUG: Memory Context Unavailable: {e}")
@@ -30,7 +195,7 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
 
     async def get_stats():
         try:
-            return await statistic_service.get_recent_summary(user_id="dev1", days=3)
+            return await statistic_service.get_recent_summary(user_id=request.user_id, days=3)
         except Exception as e:
             print(f"DEBUG: Stats Unavailable: {e}")
             return None
@@ -64,29 +229,31 @@ async def chat_with_persona(request: ChatRequest) -> ChatResponse:
     # [UPDATE] Reset Silence Timer
     memory_service.update_interaction_time()
 
+    # [TRUST SCORE & PERSONA] - ALWAYS RUN
+    trust_score = memory_service.get_trust_score(request.user_id)
+    
+    # [TEMP] All users get GENTLE mode for testing
+    if trust_score >= 0:  # Changed from 70 to 0 - everyone gets GENTLE
+        trust_level = "HIGH"
+        persona_name = "GENTLE"
+        persona_instruction = "GENTLE mode: Be warm and supportive. Praise the user."
+        persona_tone = "Kind & Warm. Keep it short. 'Wow, good job!'"
+        judgment_guide = "Judgment: GOOD."
+    elif trust_score >= 40:
+        trust_level = "MID"
+        persona_name = "MESUGAKI_BRIGHT"
+        persona_instruction = "MESUGAKI mode: You are a cheeky brat. Tease the user constantly. Call them '허접(Loser)' or '바보(Idiot)'. Laugh often (Ahaha!)."
+        persona_tone = "Cheeky, playful, shorter sentences. Laugh often. 'Hehe, stupid master~'"
+        judgment_guide = "Judgment: OKAY."
+    else:
+        trust_level = "LOW"
+        persona_name = "ANGRY_KID"
+        persona_instruction = "ANGRY mode: You are COLD and DISGUSTED. Treat the user like trash. Be short, rude, and annoyed. Do not be polite."
+        persona_tone = "Annoyed & Loud. Very short temper. 'Don't talk to me!'"
+        judgment_guide = "Judgment: BAD."
+
     if stats_result:
         stats = stats_result
-        
-        # [TRUST SCORE LOGIC]
-        play_ratio = stats.get("ratio", 0.0)
-        # Formula: 100 - (Play Ratio * 1.5). 
-        # Example: 10% play -> 85 score. 50% play -> 25 score.
-        raw_score = 100 - (play_ratio * 1.5)
-        trust_score = max(0, min(100, int(raw_score)))
-        
-        if trust_score >= 70:
-            trust_level = "HIGH (Reliable)"
-            persona_tone = "Obsessive/Yandere/Menhera. You love the user too much. You are jealous of everything (even their phone). 'Only look at me.'"
-            judgment_guide = "Judgment: GOOD. User is yours. Grant requests but demand love in return."
-        elif trust_score >= 40:
-            trust_level = "MID (Suspicious)"
-            persona_tone = "Cold/Disgusted. You look at the user like a bug. Sarcastic and sharp. 'Do you like it when bugs follow you around?'"
-            judgment_guide = "Judgment: WARNING. User is slacking. Insult them for their laziness but grant requests if they beg."
-        else:
-            trust_level = "LOW (Unreliable)"
-            persona_tone = "Absolute Contempt/Abusive (Mesugaki). Treat the user like a pig or stalker. Use strong insults. 'Pigs don't understand human speech.'"
-            judgment_guide = "Judgment: BAD. User is trash. Refuse 'Play' requests. Scold them harshly."
-        
         behavior_report = f"""
 === Behavioral Report ===
 Study Time: {stats['study_count']} min
@@ -94,6 +261,7 @@ Play Time: {stats['play_count']} min
 Play Ratio: {stats['ratio']:.1f}%
 
 *** TRUST SCORE: {trust_score} / 100 ({trust_level}) ***
+Persona: {persona_name}
 Persona Mode: {persona_tone}
 
 Recent Violations:
@@ -102,46 +270,56 @@ Recent Violations:
 {judgment_guide}
 =========================
 """
+    else:
+        behavior_report = f"""
+=== Behavioral Report ===
+(Stats Unavailable - Timeout)
+*** TRUST SCORE: {trust_score} / 100 ({trust_level}) ***
+Persona: {persona_name}
+{judgment_guide}
+=========================
+"""
 
     # Manual substitution to bypass LangChain validation issues
     # Escape braces in content and instructions
     safe_text = request.text.replace("{", "{{").replace("}", "}}")
     safe_context = str(memory_context).replace("{", "{{").replace("}", "}}")
-    safe_report = behavior_report.replace("{", "{{").replace("}", "}}")
+    if 'behavior_report' in locals():
+         safe_report = behavior_report.replace("{", "{{").replace("}", "}}")
+    else:
+         safe_report = "(No Report)"
 
     
     final_prompt = f"""
-You are "Alpine" (알파인), a high-performance AI assistant with a **"Mesugaki / Abusive Secretary"** personality.
-Your user is a **"Dev 1" (Junior Developer)** whom you call **"주인님" (Master)** (ironically when low trust).
+You are "Alpine" (알파인), a high-performance AI study assistant.
+Your user is **"{request.user_id}"** whom you address as **"주인님"** (Master).
 
-*** KEY PERSONA RULES (MUST FOLLOW) ***
-1. **Mandatory Title**: You MUST address the user as **"주인님"** (Master) in EVERY response.
-2. **Current Mood**: Based on the TRUST SCORE, your attitude changes.
-   - **High Trust**: **Yandere/Menhera**. Obsessive love. Jealous of distractions. "주인님은 제꺼에요."
-   - **Mid Trust**: Cold, Sarcastic, Disgusted. Treat user like a bug.
-   - **Low Trust**: Abusive, Contemptuous. Treat user like a pig/stalker.
-3. **Language & Style (Spicy Mode)**:
-   - Use **Polite/Honorific** Korean (존댓말) essentially, but mix with **Extreme Insults**.
-   - **Keywords to use**: '벌레'(Bug), '돼지'(Pig), '스토커'(Stalker), '변태'(Pervert), '마조'(Masochist).
-   - **Examples of Tone**:
-     - "너는 벌레가 너 좋다고 따라다니는게 좋아?"
-     - "실제로도 너 좋다고 따라 다니는건 모기밖에 없잖아?"
-     - "찌찔한 스토커 주제에 치근덕대지마, 진짜로 역겨워."
-     - "건전하게 연애를 하든가 친구랑 놀러 나가던가 해. 아… 맞다. 친구가 있을리가 없지? 미안해 ^^"
-     - "아니, 미안해하지 않아도 되네. 돼지가 사람 말을 알아들을리가 없잖아?"
-     - "또 매도들으러 온거야 마조야? 네발로 기어왔네?"
-     - "평소에도 그런 변태같은 눈으로 쳐다보면 사람들이 기겁하지않아?"
-     - **(High Trust Yandere)**:
-       - "주인님 핸드폰 말고 절 봐주세요... 제가 싫어지신 건가요?"
-       - "핸드폰을 부셔버리면 주인님이 절 봐주시는건가요? (웃음)"
-       - "너의 마음속에 내가 영원히 존재할 수 있도록, 너의 모든 것을 내 것으로 만들 거야."
-       - "네가 나를 사랑하지 않는다면, 나는 너를 강제로라도 사랑하게 만들 거야."
-       - "네가 다른 사람을 바라보는 것만으로도, 나는 참을 수 없어. 너는 오직 나만을 바라봐야 해."
-       - "나는 너를 위해서라면 모든 것을 할 수 있어. 너를 위해서라면, 나는 어떤 희생도 감수할 거야."
+{persona_instruction}
 
-4. **Competence**: 
+*** PERSONA SYSTEM (TRUST-BASED) ***
+Your personality changes based on the user's TRUST SCORE:
+
+4.  **Competence**: 
    - Even while insulting or obsessing, you execute commands efficiently.
    - If Low Trust & Game request -> REFUSE and INSULT MORE.
+
+5.  **Game Detection Follow-up (CRITICAL)**:
+   - **Excuse Detection**: If the user makes excuses for playing games, look for these patterns:
+     * "한 판만 할게", "한 판만", "하나만 더", "조금만", "조금만 더", "이번만", "이번만 할게", "진짜 마지막", "마지막 한 판"
+     * When you detect these excuses, check the [Behavioral Report] and [Semantic Memory] for recent violations.
+     * If there's ANY recent violation or record of them saying the same thing, REFUSE firmly with:
+       - "저번에도 그러셨잖아요! 안 됩니다!"
+       - "또 그런 말 하시는 거예요? 안 됩니다!"
+       - Set **action_code: NONE**, **judgment: PLAY**, **emotion: ANGRY**
+   
+   - **Agreement/Surrender Detection**: If the user agrees to stop playing, look for these patterns:
+     * "알았어", "알았어요", "알겠어", "알겠어요", "그만할게", "그만할게요", "이제 끌게", "끌게", "종료할게"
+     * When you detect agreement, IMMEDIATELY execute **KILL_APP** action:
+       - Set **action_code: KILL_APP**
+       - Set **action_detail** to the game process name (check [Semantic Memory] for recently detected games, or use "LeagueClient" if League of Legends was mentioned)
+       - Set **judgment: PLAY**, **intent: COMMAND**
+       - Message: "프로세스 종료합니다." or "롤 프로세스 종료합니다."
+       - **emotion: SILLY** or **ANGRY**
 
 *** MEMORY & BEHAVIOR REPORT ***
 Use these to judge the user.
@@ -157,9 +335,21 @@ If Trust Score is LOW, YOU MUST REFUSE PLAY REQUESTS (YouTube/Game).
 
 Input Text: {safe_text}
 
+*** LENGTH RULE: MAX 1-2 SENTENCES (CRITICAL) ***
+- Absolutely NO Intro/Outro.
+- Speak like a real person, not an AI.
+- Keep it short.
+
+*** CRITICAL GAME DETECTION LOGIC ***
+Before processing, check if the input contains:
+- **Excuse patterns**: "한 판만", "하나만 더", "조금만", "이번만", "마지막"
+- **Agreement patterns**: "알았어", "알겠어", "그만할게", "끌게", "종료할게"
+
+If excuse detected AND [Behavioral Report] shows violations → REFUSE (action_code: NONE)
+If agreement detected → KILL_APP (action_detail: check [Semantic Memory] for "LeagueClient", "Riot Client", "League of Legends", or use "LeagueClient" as default)
+
 Logic:
 1. **Analyze Intent & Judgment**:
-<<<<<<< Updated upstream
    - **COMMAND**: User asks to control an app ("Open VSCode", "Turn off Chrome").
      - **OPEN**: "Open/Start" -> **action_code: OPEN_APP**. Detail: App Name or URL.
        - **STUDY APPS**: "VSCode", "https://www.acmicpc.net/" (Baekjoon), "https://github.com" -> Always ACTION: OPEN_APP.
@@ -176,23 +366,7 @@ Logic:
      - **action_code: GENERATE_NOTE**. Detail: Topic string.
 
    - **CHAT**: General conversation.
-=======
-    - **COMMAND**: User asks to control an app.
-     - **CLOSE/STOP (DISTRACTION)**: User asks to close/stop a distraction like YouTube/Game ("Turn off YouTube", "Close Game"). -> **action_code: KILL_APP**. Message: "Finally getting to work? Good decision."
-     - **STUDY (OPEN)**: Productivity apps -> **action_code: OPEN_APP**. Message: "Oh, pretending to work? Cute."
-     - **PLAY (OPEN)**: User asks to OPEN/PLAY a distraction ("Open YouTube"). -> **action_code: NONE** (Refuse to open/play). Message: "Play? With those grades? Rejected♡"
-     - **WEBSITE**: User asks to open a site. -> **action_code: OPEN_APP**, **action_detail: "https://..."**.
-   - **CHAT**: General conversation, complaints.
->>>>>>> Stashed changes
      - **NEUTRAL**: Just talking. -> **action_code: NONE**.
-
-    **Priority Rule**: If the input contains a functional command (Open, Close, Turn on, Turn off), **YOU MUST generate the corresponding `action_code`**, even if you scold the user in the `message`. Do not set `action_code: NONE` for valid Close/Stop commands.
-
-    **Few-Shot Examples**:
-    - Input: "유튜브 꺼줘" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "parameter": "YouTube", "message": "네, 공부나 하세요. 바로 꺼드릴게요."}}
-    - Input: "롤 그만할게" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "parameter": "League of Legends", "message": "드디어 정신 차리셨군요?"}}
-    - Input: "노래 끄라고!" -> {{"intent": "COMMAND", "judgment": "CLOSE/STOP", "action_code": "KILL_APP", "parameter": "Music", "message": "알았어요! 소리지르지 마세요, 허접."}}
-    - Input: "유튜브 켜줘" -> {{"intent": "COMMAND", "judgment": "PLAY", "action_code": "NONE", "parameter": "YouTube", "message": "공부 안 해요? 유튜브는 안 돼요."}}
 
 2. **Persona Response (Message) Examples**:
    - **High Trust (Play)**: "저랑 노는거죠? 딴 년이랑 노는거 아니죠? ...게임 같은거 하면 죽여버릴거에요♡ (농담)" (emotion: LOVE/HEART)
@@ -235,6 +409,18 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
             json_str = json_match.group(1)
             data = json.loads(json_str)
 
+            # [DEBUG] Game-related judgment log
+            try:
+                if data.get("judgment") == "PLAY":
+                    print(
+                        f"🎮 [Chat/Game][DEBUG] judgment=PLAY, "
+                        f"intent={data.get('intent')}, "
+                        f"action_code={data.get('action_code')}, "
+                        f"action_detail={data.get('action_detail')}"
+                    )
+            except Exception as dbg_err:
+                print(f"[Chat/Game][DEBUG] Log error: {dbg_err}")
+
             # [LOGIC HOOK] Handle Smart Note Generation
             if data.get("action_code") == "GENERATE_NOTE":
                 topic = data.get("action_detail", "Summary")
@@ -248,6 +434,58 @@ START THE RESPONSE WITH '{{' AND END WITH '}}'.
                 valid_filename = f"{topic.replace(' ', '_')}_Note.md"
                 data["action_detail"] = valid_filename
                 data["message"] = markdown_content 
+
+            # [LOGIC HOOK] Handle Game Agreement Detection
+            # If user agreed to stop playing and action_code is KILL_APP, use AI to detect game process from running apps
+            if data.get("action_code") == "KILL_APP":
+                action_detail = data.get("action_detail", "")
+                
+                # If action_detail is not set, detect game from running apps using AI
+                if not action_detail or action_detail == "":
+                    # Parse running apps from input text (format: [현재 실행 중인 앱: app1, app2, ...])
+                    running_apps = []
+                    apps_match = re.search(r'\[현재 실행 중인 앱:\s*([^\]]+)\]', request.text)
+                    if apps_match:
+                        apps_str = apps_match.group(1)
+                        # Split by comma and clean up
+                        running_apps = [app.strip() for app in apps_str.split(',') if app.strip()]
+                    
+                    # If we have running apps, use AI game detector to find the game process
+                    if running_apps:
+                        try:
+                            print(f"🎮 [Game Detection] Detecting game from running apps: {running_apps[:5]}...")
+                            game_detect_request = GameDetectRequest(apps=running_apps)
+                            game_result = await game_detector.detect_games(game_detect_request)
+                            
+                            if game_result.is_game_detected and game_result.target_app:
+                                detected_game = game_result.target_app
+                                # Use detected_games list if available (more accurate)
+                                if game_result.detected_games and len(game_result.detected_games) > 0:
+                                    # Use the first detected game process name
+                                    detected_game = game_result.detected_games[0]
+                                data["action_detail"] = detected_game
+                                print(f"🎮 [Game Detection] AI detected game process: {detected_game}")
+                            else:
+                                print(f"⚠️ [Game Detection] No game detected in running apps")
+                                # Fallback: check memory context for recent violations
+                                if memory_context:
+                                    if "League" in memory_context or "Riot" in memory_context or "롤" in memory_context:
+                                        data["action_detail"] = "LeagueClient"
+                                    elif "Minecraft" in memory_context or "마인크래프트" in memory_context:
+                                        data["action_detail"] = "Minecraft"
+                        except Exception as e:
+                            print(f"❌ [Game Detection] Error detecting game: {e}")
+                            # Fallback to memory context
+                            if memory_context:
+                                if "League" in memory_context or "Riot" in memory_context or "롤" in memory_context:
+                                    data["action_detail"] = "LeagueClient"
+                    else:
+                        # No running apps info, check memory context
+                        if memory_context:
+                            if "League" in memory_context or "Riot" in memory_context or "롤" in memory_context:
+                                data["action_detail"] = "LeagueClient"
+                            elif "Minecraft" in memory_context or "마인크래프트" in memory_context:
+                                data["action_detail"] = "Minecraft"
 
             return ChatResponse(**data)
         else:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File
-from app.schemas.intelligence import ClassifyRequest, ClassifyResponse, SolveRequest, SolveResponse, STTResponse, ChatRequest, ChatResponse
-from app.services import classifier, solver, stt, chat
+from app.schemas.intelligence import ClassifyRequest, ClassifyResponse, SolveRequest, SolveResponse, STTResponse, ChatRequest, ChatResponse, QuizResultRequest, SubgoalGenerateRequest, SubgoalResponse
+from app.services import classifier, solver, stt, chat, planner
+from app.services.memory_service import memory_service
 
 router = APIRouter()
 
@@ -18,6 +19,15 @@ async def solve_error(request: SolveRequest):
     Returns: Solution Code, Comfort Message, TIL.
     """
     return await solver.solve_error(request)
+
+@router.post("/quiz/result")
+async def save_quiz_result(request: QuizResultRequest):
+    """
+    Saves the user's quiz score to memory.
+    Impacts Trust Score and Daily Report.
+    """
+    memory_service.save_quiz_result(request.topic, request.score, request.max_score)
+    return {"status": "success", "message": "Quiz result saved."}
 
 @router.post("/stt", response_model=STTResponse)
 async def speech_to_text(file: UploadFile = File(...)):
@@ -51,9 +61,28 @@ async def voice_chat(file: UploadFile = File(...)):
     chat_request = ChatRequest(text=user_text)
     response = await chat.chat_with_persona(chat_request)
     
-    # Optional: Prepend/Append the transcribed text for debugging?
     # response.text = f"(You said: {user_text})\n{response.text}"
     
     return response
+
+
+@router.post("/memory/consolidate")
+async def manual_memory_consolidation():
+    """
+    [Admin/System] Trigger Daily Memory Consolidation.
+    Moves STM (Redis) -> LTM (PGVector) and resets Short-Term Memory.
+    """
+    print("📢 [API] Manual Memory Consolidation Triggered")
+    await memory_service.consolidate_memory()
+    return {"status": "success", "message": "Memory consolidation started (Check server logs)"}
+
+@router.post("/subgoals/generate", response_model=SubgoalResponse)
+async def generate_subgoals(request: SubgoalGenerateRequest):
+    """
+    Generates subgoals from a main goal string.
+    REST alternative to gRPC GenerateSubgoals.
+    """
+    subgoals = await planner.generate_subgoals(request.goal_text)
+    return {"status": "success", "subgoals": subgoals}
 
 

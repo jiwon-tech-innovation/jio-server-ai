@@ -94,3 +94,39 @@ async def test_chat_with_persona_invalid_json():
 
         assert response.intent == "CHAT"
         assert "웅얼거리지 말고" in response.message
+
+
+@pytest.mark.asyncio
+async def test_chat_with_persona_surrender_triggers_kill():
+    """
+    Test scenario: User surrenders and agrees to stop playing.
+    We expect the model to respond with KILL_APP for LoL and a termination message.
+    """
+    mock_llm_response = MagicMock()
+    mock_llm_response.content = json.dumps({
+        "intent": "COMMAND",
+        "judgment": "PLAY",
+        "action_code": "KILL_APP",
+        "action_detail": "LeagueClient",
+        "message": "알겠습니다. 지금 바로 프로세스 종료할게요."
+    })
+
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.return_value = mock_llm_response
+
+    with patch("app.services.chat.get_llm", return_value=mock_llm), \
+         patch("app.services.chat.memory_service.get_user_context", return_value="User has repeatedly broken LoL promises."), \
+         patch("app.services.chat.statistic_service.get_recent_summary", return_value={
+             "ratio": 80.0,
+             "study_count": 30,
+             "play_count": 120,
+             "violations": ["LoL detected yesterday at 23:00"]
+         }):
+
+        request = ChatRequest(text="알았어.. 이제 롤 끌게.")
+        response = await chat_with_persona(request)
+
+        assert response.intent == "COMMAND"
+        assert response.action_code == "KILL_APP"
+        assert response.action_detail == "LeagueClient"
+        assert "프로세스 종료" in response.message

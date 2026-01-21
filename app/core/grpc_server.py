@@ -6,8 +6,12 @@ Services:
 - IntelligenceService: AI operations for Dev 4 (Core Decision Service)
 """
 import grpc
+from concurrent import futures
 import grpc.aio
 import json
+from grpc_health.v1 import health
+from grpc_health.v1 import health_pb2
+from grpc_health.v1 import health_pb2_grpc
 
 from app.protos import audio_pb2, audio_pb2_grpc
 from app.services import stt, classifier, chat
@@ -76,8 +80,32 @@ class AudioService(audio_pb2_grpc.AudioServiceServicer):
             )
 
         # 2. Chat (Tsundere Response)
-        chat_request = ChatRequest(text=user_text)
-        # TODO: Pass context to Chat if supported
+        # Extract user_id from accumulated media_info or default to dev1
+        user_id = final_media_info.get("user_id", "dev1")
+        print(f"👤 [Audio] Chatting as User: {user_id}")
+        # Pass running apps context if available for game detection
+        user_text_with_context = user_text
+        running_apps_list = []
+        if final_media_info.get("windows"):
+            try:
+                windows = final_media_info["windows"]
+                if isinstance(windows, list) and len(windows) > 0:
+                    # Extract app names (remove browser titles like "Google Chrome - [title]")
+                    running_apps_list = []
+                    for app in windows[:20]:  # Limit to first 20 apps
+                        # Remove browser title suffixes
+                        app_name = app.split(" - ")[0].strip()
+                        if app_name and app_name not in running_apps_list:
+                            running_apps_list.append(app_name)
+                    
+                    # Add context about running apps to help identify games
+                    apps_context = ", ".join(running_apps_list)
+                    user_text_with_context = f"{user_text} [현재 실행 중인 앱: {apps_context}]"
+                    print(f"📱 [Context] Running apps ({len(running_apps_list)}): {apps_context[:100]}...")
+            except Exception as e:
+                print(f"⚠️ [Context] Failed to parse windows: {e}")
+        
+        chat_request = ChatRequest(text=user_text_with_context, user_id=user_id)
         chat_response = await chat.chat_with_persona(chat_request)
 
         # 3. Construct JSON Intent (스키마에 맞게 매핑)
@@ -314,31 +342,37 @@ async def serve_grpc():
     """gRPC 서버 시작 - AudioService + IntelligenceService"""
     server = grpc.aio.server()
     
-    # 1. AudioService 등록 (기존)
-    audio_pb2_grpc.add_AudioServiceServicer_to_server(AudioService(), server)
+    # 1. AudioService 등록 (기존) - REMOVED (Consolidated into TrackingService)
+    # audio_pb2_grpc.add_AudioServiceServicer_to_server(AudioService(), server)
+    print("✅ [Server] AudioService is now handled by TrackingService")
     
     # 2. IntelligenceService 등록
     intelligence_servicer = IntelligenceService()
     
-    # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이 -> protobuf 필수)
-    from app.protos import intelligence_pb2
-    from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler
+    # 2-1. Health Service 등록 (AWS ALB Support)
+    health_servicer = health.HealthServicer(
+        experimental_non_blocking=True,
+        experimental_thread_pool=futures.ThreadPoolExecutor(max_workers=1)
+    )
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    
+    # Set Serving Status
+    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    health_servicer.set("jiaa.IntelligenceService", health_pb2.HealthCheckResponse.SERVING)
+    print("✅ [gRPC] Health Service Registered (ALB Ready)")
+    
+    # 수동으로 서비스 핸들러 등록 (protobuf 의존성 없이)
+    from grpc import unary_unary_rpc_method_handler, stream_unary_rpc_method_handler, stream_stream_rpc_method_handler
     
     rpc_method_handlers = {
         'AnalyzeLog': unary_unary_rpc_method_handler(
             intelligence_servicer.AnalyzeLog,
-            request_deserializer=intelligence_pb2.LogAnalysisRequest.FromString,
-            response_serializer=intelligence_pb2.LogAnalysisResponse.SerializeToString,
         ),
         'ClassifyURL': unary_unary_rpc_method_handler(
             intelligence_servicer.ClassifyURL,
-            request_deserializer=intelligence_pb2.URLClassifyRequest.FromString,
-            response_serializer=intelligence_pb2.URLClassifyResponse.SerializeToString,
         ),
         'TranscribeAudio': stream_unary_rpc_method_handler(
             intelligence_servicer.TranscribeAudio,
-            request_deserializer=intelligence_pb2.AudioChunk.FromString,
-            response_serializer=intelligence_pb2.TranscribeResponse.SerializeToString,
         ),
     }
 
@@ -349,6 +383,9 @@ async def serve_grpc():
     tracking_rpc_handlers = {
         'SendAppList': unary_unary_rpc_method_handler(
             tracking_servicer.SendAppList,
+        ),
+        'TranscribeAudio': stream_stream_rpc_method_handler(
+            tracking_servicer.TranscribeAudio,
         )
     }
     
@@ -357,6 +394,50 @@ async def serve_grpc():
         tracking_rpc_handlers
     )
     server.add_generic_rpc_handlers((generic_handler_tracking,))
+    
+    # [FIX] Also register as 'jiaa.audio.AudioService' because client uses audio.proto
+    # We use an Adapter to bridge audio_pb2 types to tracking_pb2 logic
+    
+    class AudioServiceAdapter(audio_pb2_grpc.AudioServiceServicer):
+        def __init__(self, tracking_svc):
+            self.tracking = tracking_svc
+            
+        async def TranscribeAudio(self, request_iterator, context):
+            # [Highway AI] TranscribeAudio now returns a STREAM of responses
+            # We need to iterate and yield each response
+            
+            async for tracking_resp in self.tracking.TranscribeAudio(request_iterator, context):
+                # Convert tracking_pb2.AudioResponse -> audio_pb2.AudioResponse
+                # Note: audio_pb2.AudioResponse may not have is_partial, is_complete fields
+                # We pass what we can
+                yield audio_pb2.AudioResponse(
+                    transcript=tracking_resp.transcript,
+                    is_emergency=tracking_resp.is_emergency,
+                    intent=tracking_resp.intent
+                )
+
+    # Register the Adapter via standard generated method (handles serialization automatically)
+    audio_adapter = AudioServiceAdapter(tracking_servicer)
+    audio_pb2_grpc.add_AudioServiceServicer_to_server(audio_adapter, server)
+    print("✅ [Audio] AudioServiceAdapter Registered (Bridging Audio -> Tracking)")
+    
+    # audio_rpc_handlers = {
+    #     'TranscribeAudio': stream_unary_rpc_method_handler(
+    #         tracking_servicer.TranscribeAudio,
+    #     )
+    # }
+    # generic_handler_audio = grpc.method_handlers_generic_handler(
+    #     'jiaa.audio.AudioService',
+    #     audio_rpc_handlers
+    # )
+    # server.add_generic_rpc_handlers((generic_handler_audio,))
+    
+    # [FIX] Register CoreService for Dev 3 (Game Detection)
+    from app.protos import core_pb2_grpc
+    # tracking_servicer now implements CoreServiceServicer
+    core_pb2_grpc.add_CoreServiceServicer_to_server(tracking_servicer, server)
+    print("✅ [Core] CoreService Registered (SyncClient Ready)")
+
     
     # 4. TextAIService 등록 (New Goal Planner)
     from app.protos import text_ai_pb2, text_ai_pb2_grpc
@@ -373,17 +454,45 @@ async def serve_grpc():
             print(f"💬 [TextAI] Chat Request from {request.client_id}: {request.text}")
             from app.schemas.intelligence import ChatRequest as SchemaChatRequest
             
-            chat_req = SchemaChatRequest(text=request.text)
+            chat_req = SchemaChatRequest(text=request.text, user_id=request.client_id)
             chat_res = await chat.chat_with_persona(chat_req)
             
             return text_ai_pb2.ChatResponse(
                 message=chat_res.message,
                 intent=chat_res.intent,
                 action_code=chat_res.action_code,
-                action_detail=chat_res.action_detail or "",
-                emotion=chat_res.emotion or "NORMAL",
+                action_detail=chat_res.action_detail,
+                emotion=chat_res.emotion,
                 judgment=chat_res.judgment
             )
+
+        async def GenerateQuiz(self, request, context):
+            print(f"🧠 [Quiz] Generating Quiz: {request.topic} ({request.difficulty})")
+            
+            # Call planner.generate_quiz
+            # Note: generate_quiz returns List[dict] (SubgoalQuiz dictionaries)
+            subgoal_quiz_dicts = await planner.generate_quiz(request.topic, request.difficulty)
+            
+            pb_items = []
+            for sg in subgoal_quiz_dicts:
+                # Map nested quizzes
+                pb_quizzes = []
+                for q in sg["quizzes"]:
+                    pb_quizzes.append(text_ai_pb2.QuizItem(
+                        question=q["question"],
+                        options=q["options"],
+                        answer=q["answer"], # String answer
+                        explanation=q["explanation"]
+                    ))
+                
+                # Create SubgoalQuiz message
+                pb_items.append(text_ai_pb2.SubgoalQuiz(
+                    subgoal=sg["subgoal"],
+                    quizzes=pb_quizzes
+                ))
+            
+            print(f"✅ [Quiz] Generated {len(pb_items)} subgoal groups")
+            return text_ai_pb2.QuizResponse(items=pb_items)
 
     text_ai_servicer = TextAIService()
     
@@ -393,11 +502,19 @@ async def serve_grpc():
     # However, standard way is cleaner.
     text_ai_pb2_grpc.add_TextAIServiceServicer_to_server(text_ai_servicer, server)
 
-    generic_handler = grpc.method_handlers_generic_handler(
-        'jiaa.IntelligenceService', 
-        rpc_method_handlers
+    # generic_handler = grpc.method_handlers_generic_handler(
+    #     'jiaa.IntelligenceService', 
+    #     rpc_method_handlers
+    # )
+    # server.add_generic_rpc_handlers((generic_handler,))
+    
+    # Register IntelligenceService handlers (Dev 4)
+    # Re-using the dictionary defined above
+    generic_handler_intel = grpc.method_handlers_generic_handler(
+         'jiaa.IntelligenceService', 
+         rpc_method_handlers
     )
-    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_generic_rpc_handlers((generic_handler_intel,))
     
     # 5. [CRITICAL] Standard Health Check Service for AWS ALB
     health_servicer = health.HealthServicer(

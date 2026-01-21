@@ -341,8 +341,13 @@ Output JSON Only.
 
         if result.result == "PLAY":
             memory_service.save_violation(content=final_content, source="ActiveWindow")
-            trigger_chat = True
-            chat_prompt = f"User caught: {final_content}. Violation. Scold them."
+            
+            # [DEMO] Only scold if confidence is sufficient (Medium/High)
+            if result.confidence >= 0.6:
+                trigger_chat = True
+                chat_prompt = f"User caught: {final_content}. Violation. Scold them."
+            else:
+                 print(f"😶 [Classifier] Play detected but Low Confidence ({result.confidence}). Skipped scolding.")
 
         elif result.result == "STUDY":
             memory_service.save_achievement(content=final_content)

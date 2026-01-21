@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jiaa-server-ai
+  namespace: jiaa
   labels:
     app: jiaa-server-ai
 spec:
@@ -17,7 +18,7 @@ spec:
       serviceAccountName: jiaa-server-ai
       containers:
       - name: jiaa-server-ai
-        image: jiaa-server-ai:latest # Replace with your ECR/Registry URL
+        image: 541673202749.dkr.ecr.ap-northeast-2.amazonaws.com/jiaa-server-ai:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -33,6 +34,11 @@ spec:
             secretKeyRef:
               name: jiaa-ai-secret
               key: openai_api_key
+        - name: GROQ_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-groq-secret
+              key: groq_api_key
         
         # AWS Credentials (Recommended: Use IRSA instead of keys)
         # - name: AWS_ACCESS_KEY_ID
@@ -45,8 +51,9 @@ spec:
           value: "us-east-1"
         
         # Database (Connects to 'jiaa-postgres' Service)
+        # Database (Connects to RDS directly based on prod env)
         - name: PG_HOST
-          value: "jiaa-postgres"
+          value: "jiaa-db.cveg64k8yuia.ap-northeast-2.rds.amazonaws.com"
         - name: PG_PORT
           value: "5432"
         - name: PG_USER
@@ -60,13 +67,18 @@ spec:
               name: jiaa-db-secret
               key: pg_password
         - name: PG_DB
-          value: "jiaa_memory"
+          value: "jiaa" # Config says jiaa_memory but env says jiaa. using env.
         
-        # Redis (Connects to 'jiaa-redis' Service)
+        # Redis (Connects to 'redis-master' in 'jiaa-system')
         - name: REDIS_HOST
-          value: "jiaa-redis"
+          value: "redis-master.jiaa-system.svc.cluster.local"
         - name: REDIS_PORT
           value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: jiaa-redis-secret
+              key: password
         
         # InfluxDB (Connects to 'jiaa-influxdb' Service)
         - name: INFLUXDB_URL
